@@ -1,0 +1,29 @@
+# Git normalizes text files to LF in the repository and lets the checkout
+# decide the working-tree form, so byte sizes stop depending on whoever
+# cloned the repo. core.autocrlf on the cloning machine is overridden here.
+* text=auto eol=lf
+
+*.py    text eol=lf
+*.md    text eol=lf
+*.spec  text eol=lf
+LICENSE text eol=lf
+
+# Windows-facing files must arrive with CRLF: the guide is opened in Notepad
+# and the rule library is hand-edited on Windows.
+*.txt      text eol=crlf
+*.json     text eol=crlf
+*.ps1      text eol=crlf
+*.bat      text eol=crlf
+*.cmd      text eol=crlf
+
+# The FSF license text is distributed verbatim and its SHA256 is published in
+# THIRD-PARTY-NOTICES.md, so Git must never reflow its line endings.
+licenses/* -text
+
+# Never touch bytes inside shipped or generated binaries.
+*.exe  binary
+*.dll  binary
+*.pyd  binary
+*.zip  binary
+*.png  binary
+*.ico  binary

@@ -69,8 +69,8 @@
 
 发布附件：`SysProbe-Lite_v1.0.0_Portable.zip`
 
-- 压缩包大小：**45,242,148 字节（43.15 MB）**，163 个条目，ZIP_DEFLATED level 9
-- 压缩包 SHA256：`f001a5a48f15553fbb87bb6fd4aacafbdcd37d835e036b0b233bbbd96945382d`
+- 压缩包大小：**45,242,557 字节（43.15 MB）**，164 个条目，ZIP_DEFLATED level 9
+- 压缩包 SHA256：`46bd912e26028089c992476ee154ce4b4e6cb99fd565d3442f7a2eb858e1082a`
 - 主程序 `双击运行体检.exe` 官方指纹（SHA256）：`8ed34c878eae6df8ad446ce9861954099969c4c4ab8f5e75a31e376babb2a9bb`
 - 以上三行由 `tools/build.py` 在每次打包后逐字回填，与包内 `必须看的使用说明.txt` 同源；
   手动改数码数会被构建断言拦下（不一致就构建失败，不会发布）。
@@ -89,7 +89,8 @@ certutil -hashfile 双击运行体检.exe SHA256
 （`双击运行体检.exe`、`故障规则库.json`、`必须看的使用说明.txt`）。
 刻意不使用 `--onefile`：onefile 每次启动都往临时目录自我解压，既容易被杀软判定可疑，
 也让用户无法替换第三方库；`--contents-directory="_internal"` 让所有 dll 收在一个目录里。
-第三方运行库的许可证说明在 `_internal\licenses\`。
+第三方运行库的许可证在 `_internal\licenses\`：本项目 `LICENSE`（MIT）、`THIRD-PARTY-NOTICES.md`
+（组件/版本/许可证标识逐项列出），以及 LGPL-3.0 正文全文（PySide6 与 Qt 运行库所依据的条款）。
 
 ---
 
@@ -115,9 +116,6 @@ certutil -hashfile 双击运行体检.exe SHA256
   界面会如实显示这一项需要管理员，而不是猜一个数。
 - 严重硬件故障常常直接死机、来不及写日志，所以"没有硬件错误记录"不等于"硬件一定没问题"。
 - 报告与日志只落在本机（程序旁边，写不进去时改落系统临时目录）；本程序不上传任何东西。
-- LGPL 组件（PySide6 / Qt）的许可证**全文**未随包提供：本机 wheel 内只有厂商自带的
-  商业授权片段声明，且本项目禁止联网抓取。包内 `THIRD-PARTY-NOTICES.md` 如实标注了
-  组件、版本、许可证标识与获取地址，补齐全文的办法也写在里面。
 
 ---
 
@@ -142,7 +140,8 @@ py -3 selftest.py                 &:: 探针耗时、脱敏回归、本机身份
 ## 许可与免责声明
 
 - 本项目自身源码：MIT（见 `LICENSE`）。
-- 包内第三方运行库：各自许可证，见 `THIRD-PARTY-NOTICES.md` 与 `_internal\licenses\`。
+- 包内第三方运行库：各自许可证，见 `THIRD-PARTY-NOTICES.md` 与 `_internal\licenses\`；
+  其中 LGPL-3.0 正文已随包提供（`_internal\licenses\LGPL-3.0.txt`）。
 - 本程序按"现状"提供，不构成维修承诺。红黄绿只是基于本机只读检查结果的提示，
   最终处置请你自己确认或交给专业维修人员；因使用本程序得到的判断而采取的任何操作，
   后果由操作者自负。

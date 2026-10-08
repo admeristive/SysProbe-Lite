@@ -25,23 +25,26 @@
    这条同时是打包契约里"绝对禁止 --onefile"的技术原因之一。
 3. **源码可得。** 本项目源码在仓库根目录；Qt / CPython 的官方源码地址见下。
 
-## 还差一件事（如实标注，发版前请补齐）
+## LGPL 全文（已随包提供）
 
-LGPL-3.0 要求各组件的**许可证全文**随分发提供。当前本机安装的 PySide6 wheel 里只有厂商自带的
-一个 470 字节的商业授权声明片段（`LicenseRef-Qt-Commercial.txt`），**没有 LGPL 全文**，
-而本项目禁止任何联网抓取，所以我没有把全文放进包里。
+LGPL-3.0 要求许可证全文随分发提供。包内 `_internal\licenses\LGPL-3.0.txt` 即 FSF 的
+lgpl-3.0.txt 正文：7,634 字节、166 行、纯 ASCII，SHA256
+`ade78d04982d69972d444a8e14a94f87a2334dd3855cc80348ea8e240aa0df2d`。
+该文件本身开头就写着"允许复制和分发本文档的逐字副本，但不允许更改"，所以我们只做原样搬运。
+`tools\build.py` 每次构建都会把仓库 `licenses\` 下的文件复制进 `_internal\licenses\`。
 
-补齐办法（任选一条，都不需要动代码）：
+这份全文的来源，如实说明：本项目禁止联网抓取，构建期也没有下载，它取自本机既有的两处
+独立副本——setuptools 内置依赖的一份，和 Git for Windows 里 libunistring 的一份。
+两份逐行比对下来只差一处（FSF 网址写作 `https://` 与旧的 `http://`），入库的是较新的那一处。
+如果你要在联网的机器上与 GNU 官网逐字核对，可以执行（本程序不会访问任何网络）：
 
 ```
-# 1) 从 GNU 官网取 LGPL-3.0 正文，存到本仓库的 licenses\ 目录
-curl -L -o licenses\LPGL-3.0.txt https://www.gnu.org/licenses/lgpl-3.0.txt
-
-# 2) 或在你自己机器上的 Qt 安装目录里找 LICENSE 文件复制过去
+curl -L -o licenses\LGPL-3.0.txt https://www.gnu.org/licenses/lgpl-3.0.txt
+certutil -hashfile licenses\LGPL-3.0.txt SHA256
 ```
 
-放好之后 `tools\build.py` 会把 `licenses\` 下的所有文件一并复制进 `_internal\licenses\`，
-不需要重新设计打包流程。
+哈希与上一致即为同文；若不一致，以官网为准覆盖 `licenses\`，再跑一次 `py -3 tools\build.py`
+即可，不需要改任何代码。
 
 官方条款获取地址（仅供你自己核对后打开，本程序不会访问任何网络）：
 - LGPL-3.0：https://www.gnu.org/licenses/lgpl-3.0.txt

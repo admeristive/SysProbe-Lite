@@ -145,4 +145,9 @@ Python 3.11+ · PySide6 · PyInstaller（onedir）· Windows 原生只读采集�
 
 ## 许可
 
-开源前先补齐 LICENSE 文件。在此之前，本仓库内容默认保留所有权利。
+本项目自身源码以 MIT 许可证发布（见 `LICENSE`）。
+
+界面用的 PySide6 与它带的 Qt 运行库是 LGPL-3.0，这部分条款我们没有绕过也没有放宽：
+主程序只动态链接、不修改这些库，且发布格式是 onedir，`_internal\` 里的库文件可以被用户
+替换成同版本的自建库。组件清单、许可证标识与 LGPL-3.0 全文见 `THIRD-PARTY-NOTICES.md`
+和包内 `_internal\licenses\`。
