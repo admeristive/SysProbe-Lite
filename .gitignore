@@ -1,0 +1,36 @@
+# 打包产物与构建缓存：整目录不入库（dist 夹实测 109.2 MB，其中 _internal 107.4 MB）
+dist/
+build/
+*.spec.bak
+
+# Python 字节码与缓存
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# 程序运行时的落盘产物：体检报告与异常日志一律不入库
+体检报告/
+*/体检报告/
+local_crash.log
+gui_check.txt
+
+# 归档包（发版走 GitHub Release 附件，不进 Git 历史）
+*.zip
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+.DS_Store
+
+# 本地凭据与个人环境：任何密钥只留在这里，永远不提交
+.env
+.env.*
+*.key
+*.pfx
+*.pem
+credentials*
