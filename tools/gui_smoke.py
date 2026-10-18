@@ -15,6 +15,12 @@ import time
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# One banned-word list for all three gates; a word only one of them knows is a
+# word that can still ship.
+from wording_check import BANNED_WORDS as BANNED_ON_SCREEN      # noqa: E402
+sys.path.insert(0, ROOT)
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -24,12 +30,6 @@ except Exception:
 from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 from sysprobe import probes, scan  # noqa: E402
 from sysprobe.ui.main_window import FindingCard, MainWindow  # noqa: E402
-
-# Words the window must never show. The report's collapsed appendix is where
-# these belong; a novice screen that says WHEA is a design failure.
-BANNED_ON_SCREEN = ["WHEA", "TDR", "0x", "sfc", "sc query", "PowerShell",
-                    "EventID", "Registry", "HKLM", "HKCU", "ctypes", "XPath",
-                    "Defender"]
 
 
 def wait_until(window, seconds=90.0):

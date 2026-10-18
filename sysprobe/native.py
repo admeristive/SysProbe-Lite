@@ -164,6 +164,114 @@ class _DD:
 user32.EnumDisplayDevicesW.argtypes = [W.LPCWSTR, W.DWORD, C.POINTER(_DISPLAY_DEVICEW), W.DWORD]
 user32.EnumDisplayDevicesW.restype = W.BOOL
 
+_ENUM_CURRENT_SETTINGS = -1
+
+class _DEVMODEW(C.Structure):
+    """The display mode block, laid out by measured offsets, not by trust.
+
+    dmPelsWidth sits at 172 and dmDisplayFrequency at 184; C.sizeof must stay
+    220 or every field below dmDeviceName shifts and the readings turn into
+    plausible nonsense. The driver writes 188 into dmSize on this machine, so
+    the returned size is not a handshake and cannot be used as one.
+    """
+    _fields_ = [
+        ("dmDeviceName", W.WCHAR * 32),
+        ("dmSpecVersion", W.WORD), ("dmDriverVersion", W.WORD),
+        ("dmSize", W.WORD), ("dmDriverExtra", W.WORD), ("dmFields", W.DWORD),
+        ("dmOrientation", W.SHORT), ("dmPaperSize", W.SHORT),
+        ("dmPaperLength", W.SHORT), ("dmPaperWidth", W.SHORT),
+        ("dmScale", W.SHORT), ("dmCopies", W.SHORT),
+        ("dmDefaultSource", W.SHORT), ("dmPrintQuality", W.SHORT),
+        ("dmColor", W.SHORT), ("dmDuplex", W.SHORT),
+        ("dmYResolution", W.SHORT), ("dmTTOption", W.SHORT),
+        ("dmCollate", W.SHORT),
+        ("dmFormName", W.WCHAR * 32),
+        ("dmLogPixels", W.WORD),
+        ("dmBitsPerPel", W.DWORD), ("dmPelsWidth", W.DWORD),
+        ("dmPelsHeight", W.DWORD), ("dmDisplayFlags", W.DWORD),
+        ("dmDisplayFrequency", W.DWORD), ("dmICMMethod", W.DWORD),
+        ("dmICMIntent", W.DWORD), ("dmMediaType", W.DWORD),
+        ("dmDitherType", W.DWORD), ("dmReserved1", W.DWORD),
+        ("dmReserved2", W.DWORD), ("dmPanningWidth", W.DWORD),
+        ("dmPanningHeight", W.DWORD),
+    ]
+
+
+user32.EnumDisplaySettingsW.argtypes = [W.LPCWSTR, C.c_int, C.POINTER(_DEVMODEW)]
+user32.EnumDisplaySettingsW.restype = W.BOOL
+
+
+def _mode_at(device, index):
+    """One mode as a dict, or None when the driver declines that index."""
+    m = _DEVMODEW()
+    if not user32.EnumDisplaySettingsW(device, index, C.byref(m)):
+        return None
+    return {"width": int(m.dmPelsWidth), "height": int(m.dmPelsHeight),
+            "hz": int(m.dmDisplayFrequency), "bpp": int(m.dmBitsPerPel)}
+
+
+def display_modes():
+    """Per attached display: the mode in use, and the fastest mode offered at
+    that same size.
+
+    This is what separates "the panel is a 240 Hz panel" from "the panel is
+    being driven at 60 Hz", which no other read-only channel on this machine
+    answers. Measured here: 1 attached device, 24 size tiers out of 210 mode
+    rows, current 2560x1600 at 240 Hz, about 7 ms.
+
+    The DPI trap is worth keeping visible: GetDeviceCaps with HORZRES/VERTRES
+    returns 1707x1067 at 150% scaling, while DESKTOPHORZRES/DESKTOPVERTRES
+    return the panel's real 2560x1600. Only the desktop pair agrees with what
+    this function reports, so the logical device context must never be quoted
+    as a resolution.
+
+    Which row to walk also has to be read from the flags, not guessed: the
+    adapter rows measure here as 0x00000005 (ACTIVE|PRIMARY) and ATTACHED_TO_DESKTOP
+    only appears on the monitor hanging off them, so filtering adapters by that
+    bit returns nothing at all - the failure is silent, an empty list, which is
+    why the caller reads None as "not measured" rather than "no display".
+    """
+    if C.sizeof(_DEVMODEW) != 220:
+        return None
+    devices = []
+    i = 0
+    while i < 8:
+        dd = _DISPLAY_DEVICEW()
+        dd.cb = C.sizeof(dd)
+        if not user32.EnumDisplayDevicesW(None, i, C.byref(dd), 0):
+            break
+        flags = dd.StateFlags
+        if (flags & _DD.ACTIVE) and not (flags & _DD.MIRRORING_DRIVER):
+            devices.append((dd.DeviceName.strip("\0"),
+                            dd.DeviceString.strip("\0"),
+                            bool(flags & _DD.PRIMARY_DEVICE)))
+        i += 1
+    out = []
+    for device, adapter, primary in devices:
+        current = _mode_at(device, _ENUM_CURRENT_SETTINGS)
+        if not current:
+            continue
+        best = {}
+        n = 0
+        while n < 400:
+            row = _mode_at(device, n)
+            if not row:
+                break
+            key = (row["width"], row["height"])
+            if row["hz"] > best.get(key, 0):
+                best[key] = row["hz"]
+            n += 1
+        ceiling = best.get((current["width"], current["height"]), current["hz"])
+        out.append({
+            "device": device, "adapter": adapter, "primary": primary,
+            "current": current,
+            "ceiling_hz": ceiling,
+            "gap": ceiling - current["hz"],
+            "tiers": len(best),
+            "best_any": max(best.values()) if best else current["hz"],
+        })
+    return out or None
+
 
 def display_adapters():
     """Adapters with the monitors hanging off them.
@@ -349,3 +457,383 @@ def dir_64bit():
 
 def dir_32bit():
     return os.path.join(SYSTEM_ROOT, "SysWOW64")
+
+
+# ------------------------------------------------------- memory vs commit limit
+
+class _MEMORYSTATUSEX(C.Structure):
+    _fields_ = [
+        ("dwLength", W.DWORD),
+        ("dwMemoryLoad", W.DWORD),
+        ("ullTotalPhys", C.c_ulonglong),
+        ("ullAvailPhys", C.c_ulonglong),
+        ("ullTotalPageFile", C.c_ulonglong),
+        ("ullAvailPageFile", C.c_ulonglong),
+        ("ullTotalVirtual", C.c_ulonglong),
+        ("ullAvailVirtual", C.c_ulonglong),
+        ("ullAvailExtendedVirtual", C.c_ulonglong),
+    ]
+
+
+kernel32.GlobalMemoryStatusEx.argtypes = [C.POINTER(_MEMORYSTATUSEX)]
+kernel32.GlobalMemoryStatusEx.restype = W.BOOL
+
+
+def memory_commit():
+    """Physical RAM against the commit limit.
+
+    The commit limit equals RAM plus every paging file, so the two numbers
+    being equal means paging is switched off. dwLength must be set before the
+    call or the API refuses and reports success-sized garbage.
+    """
+    m = _MEMORYSTATUSEX()
+    m.dwLength = C.sizeof(_MEMORYSTATUSEX)
+    if not kernel32.GlobalMemoryStatusEx(C.byref(m)):
+        return None
+    return {
+        "load_percent": int(m.dwMemoryLoad),
+        "total_phys": int(m.ullTotalPhys),
+        "avail_phys": int(m.ullAvailPhys),
+        "total_commit": int(m.ullTotalPageFile),
+        "avail_commit": int(m.ullAvailPageFile),
+    }
+
+
+_MM_KEY = "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management"
+
+
+def paging_declaration():
+    """What paging the system declares, and what is actually attached.
+
+    PagingFiles is what the user or a script asked for; ExistingPageFiles is
+    what Windows attached at start-up. Reading both tells us where the paging
+    files live, which the commit-limit totals alone cannot.
+    """
+    try:
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _MM_KEY, 0,
+                             winreg.KEY_READ | winreg.KEY_WOW64_64KEY)
+    except OSError:
+        return None
+    got = {}
+    try:
+        for name, out_key in (("PagingFiles", "declared"),
+                              ("ExistingPageFiles", "attached")):
+            try:
+                raw, _kind = winreg.QueryValueEx(key, name)
+            except OSError:
+                continue
+            if isinstance(raw, str):
+                raw = [raw]
+            got[out_key] = [str(x) for x in raw]
+    finally:
+        winreg.CloseKey(key)
+    return got or None
+
+
+# ------------------------------------------------- per-process drawing limits
+
+GR_GDIOBJECTS = 0
+GR_USEROBJECTS = 1
+PROCESS_QUERY_INFORMATION = 0x0400
+
+_ENUM_PROC = C.WINFUNCTYPE(W.BOOL, W.HWND, W.LPARAM)
+user32.EnumWindows.argtypes = [_ENUM_PROC, W.LPARAM]
+user32.EnumWindows.restype = W.BOOL
+user32.GetWindowThreadProcessId.argtypes = [W.HWND, C.POINTER(W.DWORD)]
+user32.GetWindowThreadProcessId.restype = W.DWORD
+user32.GetGuiResources.argtypes = [W.HANDLE, W.DWORD]
+user32.GetGuiResources.restype = W.DWORD
+
+
+def window_owners(cap=80):
+    """[(pid, top_level_window_count)], busiest first.
+
+    Every top-level window counts, not only the visible ones: the program that
+    runs out of drawing resources is often sitting in the notification area.
+    """
+    counts = {}
+
+    @_ENUM_PROC
+    def _each(hwnd, _lparam):
+        pid = W.DWORD(0)
+        user32.GetWindowThreadProcessId(hwnd, C.byref(pid))
+        if pid.value:
+            counts[pid.value] = counts.get(pid.value, 0) + 1
+        return True
+
+    try:
+        user32.EnumWindows(_each, 0)
+    except Exception:
+        return []
+    return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:cap]
+
+
+def draw_usage(pid):
+    """(gdi_objects, user_objects) for one pid, or None when we cannot see it.
+
+    Query-only rights, no memory is read, and the handle is always closed.
+    A process that owns a window cannot legitimately report zero of both, so
+    0/0 is treated as "the owner refused us" rather than as a real measurement.
+    """
+    for rights in (PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_QUERY_INFORMATION):
+        handle = kernel32.OpenProcess(rights, False, pid)
+        if not handle:
+            continue
+        try:
+            gdi = int(user32.GetGuiResources(handle, GR_GDIOBJECTS))
+            usr = int(user32.GetGuiResources(handle, GR_USEROBJECTS))
+        finally:
+            kernel32.CloseHandle(handle)
+        return (gdi, usr) if (gdi or usr) else None
+    return None
+
+
+# ------------------------------------------------------- registry read helpers
+
+_NO_MORE_ITEMS = 259
+
+
+def _read_values(handle, names):
+    """{name: value} with None for whatever the key does not carry.
+
+    Missing values are the normal case here, not an error: installers write
+    wildly different subsets of their own uninstall key.
+    """
+    got = {}
+    for name in names:
+        try:
+            got[name] = winreg.QueryValueEx(handle, name)[0]
+        except OSError:
+            got[name] = None
+    return got
+
+
+def _subkey_names(key):
+    """Subkey names, or None when the sweep could not be finished.
+
+    [] and None are different answers: [] means this key really holds nothing,
+    None means we cannot say. A probe that reads a half-finished list as an
+    empty one tells a novice their machine has no programs installed. Enumerating
+    past the end raises 259, which is a completed sweep, not a failure - and 259
+    is read from winerror, falling back to errno, because a hand-made OSError
+    in a test can carry the code in either place.
+    """
+    try:
+        count = winreg.QueryInfoKey(key)[0]
+    except OSError:
+        return None
+    names = []
+    for i in range(count):
+        try:
+            names.append(winreg.EnumKey(key, i))
+        except OSError as exc:
+            code = getattr(exc, "winerror", None)
+            if code is None:
+                code = exc.errno
+            if code == _NO_MORE_ITEMS:
+                break
+            return None
+    return names
+
+
+# ------------------------------------------------------------ installed software
+
+_UNINSTALL = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
+_UNINSTALL_VIEWS = (
+    ("machine64", winreg.HKEY_LOCAL_MACHINE, winreg.KEY_WOW64_64KEY),
+    ("machine32", winreg.HKEY_LOCAL_MACHINE, winreg.KEY_WOW64_32KEY),
+    ("user", winreg.HKEY_CURRENT_USER, 0),
+)
+_UNINSTALL_FIELDS = ("DisplayName", "Publisher", "DisplayVersion",
+                     "InstallDate", "EstimatedSize", "SystemComponent")
+
+
+def installed_programs():
+    """What "设置 - 应用" itself lists, read from the keys that page is built from.
+
+    Measured here: 200 entries across the three views, 67 left once the rows with
+    no display name and the ones the system hides are dropped; 6.2 ms for the
+    whole sweep.
+
+    Two value names are refused on purpose. UninstallString and
+    QuietUninstallString are the command line that would remove a program, and
+    this tool removes nothing. InstallLocation is skipped because it stores
+    C:\\Users\\<account> for anything installed per-user, which is exactly the
+    text the report must never carry; the subkey name often repeats it, so the
+    row below keeps the view ("machine64") instead of the key path.
+
+    The payload carries its own honesty: unreadable counts keys that would not
+    open, truncated says a view stopped mid-sweep. A count of programs is only
+    safe to judge against a threshold when those two are known.
+    """
+    rows = []
+    unreadable = 0
+    truncated = False
+    seen = set()
+    for scope, hive, view in _UNINSTALL_VIEWS:
+        try:
+            key = winreg.OpenKey(hive, _UNINSTALL, 0, winreg.KEY_READ | view)
+        except OSError:
+            continue
+        try:
+            subs = _subkey_names(key)
+            if subs is None:
+                truncated = True
+                continue
+            for sub in subs:
+                try:
+                    s = winreg.OpenKey(key, sub)
+                except OSError:
+                    unreadable += 1
+                    continue
+                try:
+                    got = _read_values(s, _UNINSTALL_FIELDS)
+                finally:
+                    winreg.CloseKey(s)
+                name = (got.get("DisplayName") or "").strip()
+                if not name or got.get("SystemComponent") == 1:
+                    continue
+                date = str(got.get("InstallDate") or "")
+                size = got.get("EstimatedSize")
+                row = {
+                    "name": name,
+                    "publisher": (got.get("Publisher") or "").strip(),
+                    "version": str(got.get("DisplayVersion") or "").strip(),
+                    "installed_on": date if len(date) == 8 and date.isdigit() else "",
+                    "size_mb": round(size / 1024.0, 1) if isinstance(size, int) else None,
+                    "scope": scope,
+                }
+                mark = (name.lower(), row["version"])
+                if mark in seen:
+                    continue
+                seen.add(mark)
+                rows.append(row)
+        finally:
+            winreg.CloseKey(key)
+    if not rows:
+        return None
+    return {"rows": rows, "unreadable": unreadable, "truncated": truncated}
+
+
+# ---------------------------------------------------------------- audio endpoints
+
+_MMDEVICES = r"SOFTWARE\Microsoft\Windows\CurrentVersion\MMDevices\Audio"
+_DEVICE_STATE = {"active": 0x1, "disabled": 0x2,
+                 "not_streaming": 0x4, "unplugged": 0x8}
+
+
+def audio_endpoint_states():
+    """Every play and record endpoint with its state word, as the system stores it.
+
+    Measured here: 13 play and 6 record endpoints, all readable without
+    elevation, 0.28 ms.
+
+    DeviceState is a bitmask, and the values on a real machine are composites -
+    0x22000004 appeared here. Testing it for equality against 1, 2, 4 or 8 is
+    how an endpoint that is simply not streaming right now gets misreported as
+    broken, so callers must mask. The endpoint's own CLSID is not returned: the
+    probe counts devices, and a device that has been renamed after its owner
+    would carry that name into a report.
+    """
+    rows = []
+    unreadable = 0
+    truncated = False
+    for kind, label in (("Render", "play"), ("Capture", "record")):
+        try:
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                                 "%s\\%s" % (_MMDEVICES, kind))
+        except OSError:
+            continue
+        try:
+            subs = _subkey_names(key)
+            if subs is None:
+                truncated = True
+                continue
+            for sub in subs:
+                try:
+                    s = winreg.OpenKey(key, sub)
+                except OSError:
+                    unreadable += 1
+                    continue
+                try:
+                    raw = _read_values(s, ("DeviceState",))["DeviceState"]
+                finally:
+                    winreg.CloseKey(s)
+                if not isinstance(raw, int):
+                    unreadable += 1
+                    continue
+                row = {"kind": label, "state": int(raw)}
+                for name, bit in _DEVICE_STATE.items():
+                    row[name] = bool(raw & bit)
+                rows.append(row)
+        finally:
+            winreg.CloseKey(key)
+    if not rows:
+        return None
+    return {"rows": rows, "unreadable": unreadable, "truncated": truncated}
+
+
+# ------------------------------------------------------------------ net cards
+
+_NIC_CLASS = r"SYSTEM\CurrentControlSet\Control\Class\{4d36e972-e325-11ce-bfc1-08002be10318}"
+_NCF = {"virtual": 0x0001, "physical": 0x0004, "hidden": 0x0008,
+        "no_service": 0x0010, "not_user_removable": 0x0020, "has_ui": 0x0080}
+_NIC_FIELDS = ("DriverDesc", "Characteristics", "*IfType")
+
+
+def network_adapters():
+    """Cards and pseudo-cards, with the hardware ones told from the rest.
+
+    Measured here: 15 numbered subkeys, 0.35 ms, DriverDesc and Characteristics
+    present on all 15, 11 of them flagged hidden. The 0x0004 bit split them
+    correctly: Intel Wi-Fi 6 AX201 (0x84) and Realtek PCIe GbE (0x04) were the
+    only two physical rows, while the remaining thirteen were WAN miniports,
+    Wi-Fi Direct, Bluetooth PAN, Kernel Debug and a Wintun tunnel.
+
+    *IfType cannot make that split - five of the thirteen virtual rows report 6,
+    the same number as real Ethernet (Bluetooth PAN, Kernel Debug and the three
+    WAN miniports that carry IP) - which is why this goes through the bit and not
+    the type. No address is read: an IP or a MAC is the
+    one reading that names a person's network, and counting adapters is enough
+    for the fault this probe is about.
+    """
+    try:
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _NIC_CLASS, 0,
+                             winreg.KEY_READ | winreg.KEY_WOW64_64KEY)
+    except OSError:
+        return None
+    rows = []
+    unreadable = 0
+    truncated = False
+    try:
+        subs = _subkey_names(key)
+        if subs is None:
+            truncated = True
+        else:
+            for sub in subs:
+                if not sub.isdigit():
+                    continue
+                try:
+                    s = winreg.OpenKey(key, sub)
+                except OSError:
+                    unreadable += 1
+                    continue
+                try:
+                    got = _read_values(s, _NIC_FIELDS)
+                finally:
+                    winreg.CloseKey(s)
+                mask = got.get("Characteristics")
+                if not isinstance(mask, int):
+                    unreadable += 1
+                    continue
+                row = {"name": (got.get("DriverDesc") or "").strip(),
+                       "characteristics": mask,
+                       "if_type": got.get("*IfType")}
+                for label, bit in _NCF.items():
+                    row[label] = bool(mask & bit)
+                rows.append(row)
+    finally:
+        winreg.CloseKey(key)
+    if not rows:
+        return None
+    return {"rows": rows, "unreadable": unreadable, "truncated": truncated}

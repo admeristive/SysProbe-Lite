@@ -10,6 +10,7 @@ import time
 import winreg
 
 from . import evtlog
+from . import limits
 from . import native
 from .model import Finding, Status
 
@@ -17,7 +18,7 @@ from .model import Finding, Status
 
 _APPCODE = {
     "c000007b": ("软件版本不匹配（32 位与 64 位运行库混装）", "常见于游戏和老软件，补装微软运行库即可"),
-    "c0000135": ("软件缺少运行库文件", "提示\"找不到 xxx.dll\"就是这一类"),
+    "c0000135": ("软件缺少运行库文件", "打不开时提示缺少某个程序文件，就是这一类"),
     "c0000139": ("软件的启动文件版本对不上", "多为运行库被覆盖，重装运行库可解"),
     "c0000142": ("软件启动时初始化失败", "常见于运行库或软件自身文件被改动"),
     "c0000005": ("软件读写了不该读的内存", "多数是软件/MOD/外挂自身的问题，不代表内存条坏了"),
@@ -275,7 +276,7 @@ def probe_runtime_dlls(ctx):
         out.append(Finding(
             module="display", status=Status.RED, kind="vc_missing",
             headline="缺少运行库文件，并且已经导致软件打不开（%d 个文件）" % (len(missing_vc) + len(missing_dx)),
-            plain="近 7 天有软件报 0x%s，这正是缺少运行库的典型表现" % tripped[0],
+            plain="近 7 天有软件报过\"某个程序文件找不到\"类的错误，这正是缺少运行库的典型表现",
             why="运行库不是病毒，是微软的公共基础组件，装上就能好",
             steps=_REDIST_STEPS,
             copy_cmd=_VC_REDIST,
@@ -286,8 +287,8 @@ def probe_runtime_dlls(ctx):
         out.append(Finding(
             module="display", status=Status.GRAY, kind="runtime_absent",
             headline="有 %d 个常见运行库文件不在，但近 7 天没有任何软件因此报错" % len(merged),
-            plain="这不影响使用，不需要处理。只有当某个软件明确提示\"找不到 xxx.dll\"或"
-                  "\"0xc000007b / 0xc0000135\"时才需要补装",
+            plain="这不影响使用，不需要处理。只有当某个软件打不开、并且提示缺少某个程序"
+                  "文件的时候才需要补装",
             skip=True,
             native={"missing": merged},
         ))
@@ -295,7 +296,7 @@ def probe_runtime_dlls(ctx):
         out.append(Finding(
             module="display", status=Status.GREEN, kind="runtime_ok",
             headline="常用运行库文件齐全",
-            plain="7 类常见\"缺少 dll\"的成因都检查过了，本机都存在",
+            plain="7 类常见\"缺少程序文件\"的成因都检查过了，本机都存在",
         ))
     return out
 
@@ -303,8 +304,8 @@ def probe_runtime_dlls(ctx):
 _REDIST_STEPS = [
     "到微软官方页面下载 \"Visual C++ Redistributed\"，x64 和 x86 两个版本都装（很多软件是 32 位的）",
     "下载地址：%s" % _VC_REDIST,
-    "老游戏缺 d3dx9_43.dll / XAudio2_7.dll 时，下载 \"DirectX End-User Runtime\"：%s" % _DX_ENDUSER,
-    "装完重启那个软件即可，不需要重装系统，也不要从第三方\"dll 下载站\"取文件",
+    "老游戏缺 DirectX 老组件时，下载 \"DirectX End-User Runtime\"：%s" % _DX_ENDUSER,
+    "装完重启那个软件即可，不需要重装系统，也不要从第三方\"单独下载某个程序文件\"的站点取文件",
 ]
 
 
@@ -455,7 +456,7 @@ def probe_appcrash(ctx):
             why=("%s（软件内部原因居多，不能据此说内存条坏了）" % known[1]) if known else "",
             steps=["重装或更新这个软件本身",
                    "如果是游戏：先关掉覆盖层、帧数显示、汉化补丁与 MOD",
-                   "如果提示缺少 dll 或 0xc000007b，按本报告\"运行库\"那一条处理",
+                   "如果某个软件打不开、提示缺少某个程序文件，按本报告\"运行库\"那一条处理",
                    "以上无效再考虑软件自带的反馈渠道"],
             native={"app": info["app"], "code": "0x%s" % code if code else "?",
                     "faulting_module": info["module"], "path": info["path"]},
@@ -967,4 +968,5 @@ PROBES = [
     ("storage", "磁盘剩余空间", probe_disk, False),
     ("startup", "开机自启动", probe_startup, False),
     ("power", "电池", probe_battery, False),
-]
+    # the invisible-limit set lives in limits.py and shares this pipeline
+] + limits.PROBES

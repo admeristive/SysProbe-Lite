@@ -82,6 +82,14 @@ MODULE_LABEL = {
     "startup": "开机自启动",
     "storage": "磁盘空间",
     "power": "电池与电源",
+    "badges": "桌面图标角标",
+    "paging": "虚拟内存",
+    "toollocks": "系统工具是否被限制",
+    "drawlimits": "软件界面资源占用",
+    "refresh": "屏幕刷新率",
+    "applist": "已装软件",
+    "audio": "声音设备",
+    "nic": "网卡",
 }
 
 E = html.escape
@@ -119,13 +127,15 @@ def _tech_table(findings, limit=40):
         native = "; ".join("%s=%s" % (k, v) for k, v in
                            sorted((f.native or {}).items())
                            if not isinstance(v, (list, dict)))
-        rows.append("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
-                    % (E(f.module), E(f.kind or "-"), E(LABEL[f.status]),
+        rows.append("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
+                    % (E(MODULE_LABEL.get(f.module, f.module)), E(LABEL[f.status]),
                        E(f.headline), '<span class="tech">%s</span>' % E(native[:400])))
     more = ('<p class="note">另有 %d 条未在此列出。</p>' % (len(findings) - limit)
             if len(findings) > limit else "")
-    return ("<table><tr><th>检查项</th><th>线索类型</th><th>结论</th>"
-            "<th>人话标题</th><th>原始读数（已脱敏）</th></tr>%s</table>%s"
+    return ("<p class=\"note\">前三栏已经把该做的事说完了。最后一栏是原始读数，"
+            "给维修或懂电脑的人核对用，看不懂可以直接跳过。</p>"
+            "<table><tr><th>检查项</th><th>结论</th><th>人话标题</th>"
+            "<th>原始读数（已脱敏）</th></tr>%s</table>%s"
             % ("".join(rows), more))
 
 
