@@ -12,7 +12,7 @@ from .. import paths
 from . import html as html_mod
 from . import plain as plain_mod
 
-TOOL_VERSION = "1.0.0"
+TOOL_VERSION = "1.1.0"
 
 
 def sanitize_findings(findings, san):

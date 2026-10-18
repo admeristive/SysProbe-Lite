@@ -20,7 +20,7 @@ import zipfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIST = os.path.join(ROOT, "dist", "双击运行体检")
 APP_NAME = "双击运行体检"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 PACKAGE = os.path.join(ROOT, "dist", "SysProbe-Lite_v%s_Portable.zip" % APP_VERSION)
 ALLOWED_ROOT_FILES = {"%s.exe" % APP_NAME, "故障规则库.json", "必须看的使用说明.txt"}
 ALLOWED_ROOT_DIRS = {"_internal"}
