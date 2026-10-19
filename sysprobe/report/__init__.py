@@ -24,25 +24,30 @@ def sanitize_findings(findings, san):
     return clean
 
 
-def verdict(shown):
-    red = sum(1 for f in shown if f.status is Status.RED)
-    yellow = sum(1 for f in shown if f.status is Status.YELLOW)
+def verdict(items):
+    """One line over every conclusion, suppressed rows included.
+
+    Callers must not pass only the visible cards: with a feed of cards only, the
+    gray branch below can never fire and the line reads "所有检查项都正常" while
+    four readings were never obtained.
+    """
+    red = sum(1 for f in items if f.status is Status.RED)
+    yellow = sum(1 for f in items if f.status is Status.YELLOW)
     if red:
         return ("有 %d 项建议尽快处理，另有 %d 项留意一下。"
                 "先做最上面那一项，做完再重新体检一次。" % (red, yellow))
     if yellow:
         return ("没有发现必须马上处理的问题，但有 %d 项值得留意。"
                 "不急着动手，先按建议观察几天。" % yellow)
-    gray = sum(1 for f in shown if f.status is Status.GRAY)
+    gray = sum(1 for f in items if f.status is Status.GRAY)
     if gray:
         return ("已检查的 %d 项都正常，另有 %d 项这台机器上看不到，"
                 "看不到不等于有问题。" % (red + yellow + sum(
-                    1 for f in shown if f.status is Status.GREEN), gray))
+                    1 for f in items if f.status is Status.GREEN), gray))
     return "所有检查项都正常，没有发现问题。"
 
 
 def build_meta(ctx, findings, san, elapsed_ms, extra=None):
-    shown = [f for f in findings if not f.skip]
     from .. import probes as _p
     admin = paths.running_as_admin()
     meta = {
@@ -57,10 +62,10 @@ def build_meta(ctx, findings, san, elapsed_ms, extra=None):
         "rules_version": ctx.rules.version,
         "rules_reviewed": ctx.rules.reviewed,
         "rules_error": ctx.rules.load_error,
-        "verdict": verdict(shown),
+        "verdict": verdict(findings),
         "probe_count": len(_p.PROBES),
         "elapsed_text": "%.1f 秒" % (elapsed_ms / 1000.0),
-        "counts": {s: sum(1 for f in shown if f.status is s) for s in Status},
+        "counts": {s: sum(1 for f in findings if f.status is s) for s in Status},
     }
     meta.update(extra or {})
     return meta

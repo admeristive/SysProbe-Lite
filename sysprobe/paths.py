@@ -28,6 +28,15 @@ def internal_bundle():
     return getattr(sys, "_MEIPASS", "") if packaged() else app_root()
 
 
+def asset_path(name):
+    """A bundled picture, read-only, inside the _internal bundle.
+
+    The same lookup works unpacked because internal_bundle() is the repository
+    root there, and assets/ sits next to sysprobe/.
+    """
+    return os.path.join(internal_bundle(), "assets", name)
+
+
 def running_as_admin():
     try:
         import ctypes

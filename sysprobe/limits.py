@@ -215,7 +215,7 @@ def probe_badges(ctx):
 
     # Attribution costs two key opens per entry, so only the entries that
     # matter get it: whoever is racing for the front, then the rest as far as
-    # the annex list goes.
+    # the cap goes.
     owners = {}
     for raw in (grabbed + names)[: 2 * SLOT_LIMIT + 4]:
         got = _badge_owner(raw)
@@ -225,6 +225,16 @@ def probe_badges(ctx):
         count32 = _count_badges_32()
     except Exception:
         count32 = -1
+
+    # The annex prints scalars only (html._tech_table drops lists and dicts) and
+    # cuts the whole line at 400 characters, so the six names and six program
+    # files below are joined and capped before they get there.
+    notes = {"count": count, "leading_blank_names": len(grabbed),
+             "readable": "、".join(readable[:6]),
+             "racers": racers,
+             "owner_dlls": "、".join(sorted(set(owners.values()))[:6]),
+             "registered_32bit": count32,
+             "unlabelled": count - len(readable)}
 
     if count > SLOT_LIMIT:
         return [Finding(
@@ -241,10 +251,7 @@ def probe_badges(ctx):
                    "进它的设置，把\"在桌面显示同步状态\"\"桌面放置同步文件夹\"\"显示角标\""
                    "这类开关关掉一到两个",
                    "改完注销一次或者重启，桌面图标才会按新的顺序重新排队"],
-            native={"count": count, "leading_blank_names": len(grabbed),
-                    "readable": readable[:12], "owners": owners,
-                    "registered_32bit": count32,
-                    "entries": sorted(x.strip() for x in names)[:2 * SLOT_LIMIT + 4]},
+            native=notes,
         )]
 
     note = ""
@@ -254,9 +261,7 @@ def probe_badges(ctx):
         module="badges", status=Status.GREEN, kind="badge_ok",
         headline="桌面图标角标占用正常（%d 个）" % count,
         plain=note or "占用位置不多，图标闪烁不太可能是这里引起的。",
-        native={"count": count, "leading_blank_names": len(grabbed),
-                "readable": readable[:12], "racers": racers,
-                "owners": owners, "registered_32bit": count32},
+        native=notes,
         skip=not grabbed,
     )]
 

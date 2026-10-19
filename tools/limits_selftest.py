@@ -286,7 +286,8 @@ case("没超总数但有人在抢前排 -> 正常行不折叠，并如实写明"
 swap(winreg_obj=FakeWinReg(keys=["{A1B2C3D4-E5F6-4A7B-9C8D-1E2F3A4B5C6D}",
                                  "{00000000-0000-0000-0000-000000000000}"]))
 f = one(limits.probe_badges(None))
-case("全是编号名也不会算错", f.native.get("count") == 2 and f.native.get("readable") == [],
+case("全是编号名也不会算错", f.native.get("count") == 2
+     and f.native.get("readable") == "" and f.native.get("unlabelled") == 2,
      str(f.native))
 
 tab = "\t\t\tIDM Shell Extension"
@@ -299,8 +300,8 @@ swap(winreg_obj=FakeWinReg(
                            "InprocServer32"): {"": dll}}))
 f = one(limits.probe_badges(None))
 case("抢前排的那个能认到是谁家的程序",
-     f.native.get("owners", {}).get(tab.strip()) == "IDMShellExt64.dll",
-     str(f.native.get("owners")))
+     "IDMShellExt64.dll" in f.native.get("owner_dlls", ""),
+     str(f.native.get("owner_dlls")))
 case("认归属用的路径不会漏进对外文案",
      "Internet Download Manager" not in f.plain + f.headline + "".join(f.steps))
 
@@ -857,11 +858,22 @@ case("实体与虚拟网卡的名字都真能印在最后一栏",
      "AX201" in printed2 and "WAN Miniport" in printed2,
      re.sub(r"<[^>]+>", " ", printed2)[:160])
 
-old_lists = sorted({f.module for f in sample if f.module not in NEW
-                    and any(isinstance(v, (list, dict)) for v in f.native.values())})
-if old_lists:
-    print("  已知遗留：%s 的附注里有列表型线索，最后一栏本来就印不出来（本批未动）"
-          % "、".join(old_lists))
+# The badge row used to hand the annex a list of names and a dictionary of
+# owners, which the renderer silently throws away. Now it has to survive the
+# same column, so it is asserted against the rendered bytes.
+swap(winreg_obj=FakeWinReg(keys=twelve))
+printed3 = re.sub(r"<[^>]+>", " ", _html._tech_table(limits.probe_badges(None)))
+restore()
+case("角标那一行的软件名真能印在最后一栏",
+     "count=12" in printed3 and "OneDrive1" in printed3
+     and "leading_blank_names=4" in printed3, printed3[:220])
+case("角标那一行的附注短到不会被最后一栏截掉",
+     printed3.strip().endswith("unlabelled=1"), printed3[-120:])
+
+sloppy_all = [f.kind for f in sample if any(isinstance(v, (list, dict))
+                                            for v in f.native.values())]
+case("八项的附注线索全是单值，最后一栏一条都不会丢",
+     not sloppy_all, str(sloppy_all))
 
 # ------------------------------------------------ privacy annex passthrough
 # The new probes put file paths into the technical annex. Those paths can carry

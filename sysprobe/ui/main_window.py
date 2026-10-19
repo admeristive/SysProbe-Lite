@@ -1,7 +1,8 @@
 """Main window: one big button, one traffic-light board, no jargon.
 
 Three rules shape everything below:
-  * a status is never colour alone - each row carries a shape and a word;
+  * a status is never colour alone - each group of rows is headed by the word,
+    and anything that is not normal also carries a pill of its own;
   * nothing is opened or switched to on the user's behalf;
   * raw readings (event ids, hexadecimal codes) stay out of the window.
 """
@@ -9,12 +10,15 @@ Three rules shape everything below:
 import os
 import sys
 import time
+from html import escape
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
+from PySide6.QtCore import QRectF, Qt
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
-    QApplication, QFrame, QHBoxLayout, QLabel, QMainWindow, QProgressBar,
-    QPushButton, QScrollArea, QStatusBar, QVBoxLayout, QWidget,
+    QApplication, QFrame, QGraphicsDropShadowEffect, QGridLayout, QHBoxLayout,
+    QLabel, QMainWindow, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
+    QStatusBar,
+    QVBoxLayout, QWidget,
 )
 
 from .. import paths, probes, report
@@ -24,40 +28,193 @@ from .elevate import relaunch_as_admin
 from .worker import ScanWorker
 
 QSS = """
-QMainWindow, QWidget { background: #f4f5f7; color: #1c1f24; }
-#Title { font-size: 21px; font-weight: 600; }
-#Subtitle { font-size: 13px; color: #67707d; }
-#Verdict { font-size: 17px; padding: 4px; }
-#Progress { font-size: 13px; color: #67707d; }
-QFrame#Card { background: #ffffff; border: 1px solid #dfe2e7;
-              border-radius: 8px; padding: 4px; }
-QFrame#Card[status="red"]    { border-left: 5px solid #c0392b; }
-QFrame#Card[status="yellow"] { border-left: 5px solid #d8a400; }
-QFrame#Card[status="green"]  { border-left: 5px solid #2f9e63; }
-QFrame#Card[status="gray"]   { border-left: 5px solid #aab1bb; }
-QLabel#Tag { font-size: 13px; font-weight: 600; }
-QLabel#Head { font-size: 16px; font-weight: 600; }
-QLabel#Plain { font-size: 14px; color: #3a4250; }
-QLabel#Steps { font-size: 14px; }
-QPushButton { background: #ffffff; border: 1px solid #cdd2da; border-radius: 6px;
-              padding: 9px 16px; font-size: 14px; }
-QPushButton:hover { background: #f0f2f5; border-color: #b9c0cb; }
-QPushButton:pressed { background: #e7eaef; }
-QPushButton:disabled { color: #a6adb8; background: #f2f3f5; border-color: #e3e6ea; }
-QPushButton#Primary { background: #2f6feb; border: 1px solid #2f6feb; color: #ffffff;
-                      font-size: 19px; font-weight: 600; padding: 16px 26px;
-                      border-radius: 8px; }
-QPushButton#Primary:hover { background: #2b64d8; border-color: #2b64d8; }
-QPushButton#Primary:disabled { background: #c3d3f0; border-color: #c3d3f0; }
-QProgressBar { background: #e9ebef; border: 1px solid #dfe2e7; border-radius: 6px;
-               min-height: 8px; max-height: 8px; }
-QProgressBar::chunk { background: #2f6feb; border-radius: 5px; }
-QScrollArea { border: none; background: transparent; }
-QStatusBar { background: #eef0f3; color: #67707d; font-size: 12px; }
+QMainWindow, QWidget#Root { background: #e9eff9; color: #414a70; }
+QWidget {
+    color: #414a70;
+    selection-background-color: #ffd9e7; selection-color: #2a2e4d;
+}
+QScrollArea {
+    background: rgba(255, 255, 255, 0.72); border: 1px solid #cdd9ee;
+    border-radius: 16px; border-bottom-left-radius: 5px;
+}
+QScrollArea > QWidget { background: transparent; }
+QScrollArea > QWidget > QWidget, QWidget#Board { background: transparent; }
+
+#Title    { font-size: 21px; font-weight: 700; color: #2a2e4d; }
+#Subtitle { font-size: 14px; color: #6b7597; }
+#Verdict  { font-size: 15px; font-weight: 700; color: #2a2e4d;
+            padding: 2px 0 0; }
+#Progress { font-size: 14px; color: #6b7597; }
+
+QFrame#Hero {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #ffffff, stop:1 #f2f7ff);
+    border: 2px solid #2a2e4d;
+    border-radius: 18px; border-bottom-right-radius: 8px;
+}
+QLabel#HeroName { font-size: 13px; font-weight: 700; color: #e0518b; }
+QLabel#HeroSay  { font-size: 14px; color: #2a2e4d; }
+
+QFrame#Card {
+    background: #f5f7fb; border: 1px solid #dce6f5;
+    border-radius: 14px; border-bottom-right-radius: 5px;
+}
+QFrame#Card[status="red"]    { background: #fff3f2; border-color: #f4cfcb; }
+QFrame#Card[status="yellow"] { background: #fff8e8; border-color: #f0e0b6; }
+QFrame#Card[status="green"]  { background: #f0f8f3; border-color: #c9e6d6; }
+QFrame#Card[status="gray"]   { background: #f5f7fb; border-color: #dce6f5; }
+
+QLabel#GroupHead {
+    font-size: 13px; font-weight: 700; color: #6b7597;
+    background: transparent; padding: 3px 2px 0;
+}
+QFrame#Bubble { background: transparent; border: none; }
+
+QLabel#Tag {
+    font-size: 12px; font-weight: 700; padding: 4px 11px;
+    border-radius: 10px; border-bottom-left-radius: 4px;
+    background: #93a0b5; color: #ffffff;
+}
+QLabel#Tag[status="red"]    { background: #e2564f; color: #ffffff; }
+QLabel#Tag[status="yellow"] { background: #eaa11c; color: #3d2a05; }
+QLabel#Tag[status="green"]  { background: #3fa877; color: #ffffff; }
+QLabel#Tag[status="gray"]   { background: #93a0b5; color: #ffffff; }
+QLabel#Head  { font-size: 18px; font-weight: 700; color: #2a2e4d; }
+QLabel#Plain { font-size: 14px; color: #414a70; }
+QLabel#Steps { font-size: 14px; color: #4a5480; }
+
+QPushButton {
+    background: #ffffff; border: 2px solid #2a2e4d;
+    border-bottom-width: 4px; border-radius: 11px;
+    padding: 7px 15px 6px; font-size: 14px; font-weight: 700; color: #2a2e4d;
+    outline: none;
+}
+QPushButton:hover    { background: #f2f7ff; }
+QPushButton:pressed  { background: #e2ecff; border-bottom-width: 2px;
+                       padding: 8px 14px 3px; }
+QPushButton:focus    { border-color: #1f2340; }
+QPushButton:disabled { color: #aab3c8; background: #f2f4f8;
+                       border-color: #c9cfdb; }
+QPushButton#Toggle {
+    background: transparent; border: none; padding: 2px 0;
+    font-size: 13px; font-weight: 700; color: #5b6690; text-align: left;
+}
+QPushButton#Toggle:hover   { color: #e0518b; background: transparent;
+                             border: none; }
+QPushButton#Toggle:pressed { color: #b83c6a; background: transparent;
+                             border: none; }
+QPushButton#Primary {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #ee6b9d, stop:1 #d64a80);
+    border: 2px solid #2a2e4d; border-bottom-width: 6px; color: #ffffff;
+    font-size: 19px; font-weight: 700; padding: 11px 26px 8px;
+    border-radius: 14px; border-bottom-left-radius: 6px;
+}
+QPushButton#Primary:hover   { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #e75d92, stop:1 #c94476); border-color: #2a2e4d; }
+QPushButton#Primary:pressed { background: #bd3c6a; border-bottom-width: 3px;
+                              padding: 14px 26px 5px; border-color: #1f2340; }
+QPushButton#Primary:focus   { border-color: #1f2340; }
+QPushButton#Primary:disabled { background: #edc3d5; border-color: #c0b4c4;
+                               color: #fbf2f6; }
+
+QProgressBar {
+    background: #e2ebf8; border: 1px solid #cdd9ee; border-radius: 7px;
+    min-height: 12px; max-height: 12px;
+}
+QProgressBar::chunk {
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #6fc0f2, stop:1 #4aa3e8);
+    border-radius: 6px;
+}
+
+QScrollBar:vertical { background: transparent; width: 12px; margin: 2px; }
+QScrollBar::handle:vertical { background: #a9bcdd; border-radius: 5px;
+                              min-height: 34px; }
+QScrollBar::handle:vertical:hover   { background: #7f9ccd; }
+QScrollBar::handle:vertical:pressed { background: #6b8bc4; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
+QScrollBar:horizontal, QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal { height: 0; background: transparent; }
+
+QStatusBar {
+    background: #e9eff9; color: #6b7597; font-size: 13px;
+    border-top: 1px solid #cdd9ee;
+}
+QStatusBar::item { border: none; }
+QToolTip {
+    background: #2a2e4d; color: #f2f5ff; border: 1px solid #1f2340;
+    border-radius: 8px; padding: 6px 9px; font-size: 13px;
+}
 """
 
-TAG_COLOR = {Status.RED: "#a5322a", Status.YELLOW: "#8a6d1b",
-             Status.GREEN: "#227a4c", Status.GRAY: "#5c6470"}
+TAG_STATUS = {Status.RED: "red", Status.YELLOW: "yellow",
+              Status.GREEN: "green", Status.GRAY: "gray"}
+# The type ramp, four steps: a verdict line, a card title, the body that
+# explains it, and only then the aside. What is left at 12px is a label that
+# names something (status pill, group head), never a sentence.
+# Measured on this machine at the real column width of 413 px: every headline
+# still fits one line at 18px, and a body goes from 2.1 lines at 12px to 2.3 at
+# 14px - one card in eleven gains a line.
+#
+# QSS supports no letter-spacing and no font-feature-settings (measured here: a
+# 14px label is 110 px at -1, 0 and +1 px; tnum is an empty operation because
+# YaHei's digits are already tabular - 66 px for ten of them either way).
+# Nothing in this window needs letterspaced Latin.
+# exactly the glyph height (14px font measured at 19px per line). Qt Style Sheets
+# have no line-height, but a QLabel in rich text does honour it - two lines of
+# 14px measured 36 px at 100%, 54 px at 150%, 72 px at 200%.
+BODY_LS = 150
+
+# The mascot. One bundled png, one line of speech that changes with the state -
+# she is not allowed to chatter, and she never names a setting to change.
+MASCOT_NAME = "小检 · 本机体检员"
+MASCOT_FILE = "mascot.png"
+MASCOT_SAY = {
+    "idle": "点下面的按钮开始。我只读不改，全程不联网。",
+    "running": "正在逐条核对，稍等一下。",
+    "clean": "都正常，没有要动的地方。",
+    "watch": "没有要命的毛病，但有 %d 处值得留意，往下翻。",
+    "fix": "有 %d 处要先处理，就在最上面几张卡里。",
+    "broken": "这一轮没跑完，原因写在电脑本地的日志里。",
+}
+
+# The word for a status is written once, above its group, instead of eleven
+# times on eleven identical pills. Colour still never carries the meaning alone.
+GROUP_TITLE = {
+    Status.RED: "要处理的",
+    Status.YELLOW: "值得留意的",
+    Status.GREEN: "都正常的",
+    Status.GRAY: "这次没取到的",
+}
+
+
+def _mascot_pixmap(height):
+    """The bundled picture, or None when it is missing or cannot be decoded.
+
+    A frozen build without the imageformats plugin, or a user who deleted a file
+    from _internal, must not cost them the whole window.
+    """
+    try:
+        path = paths.asset_path(MASCOT_FILE)
+        if not os.path.isfile(path):
+            return None
+        pm = QPixmap(path)
+        if pm.isNull():
+            return None
+        return pm.scaledToHeight(height, Qt.SmoothTransformation)
+    except Exception:
+        return None
+
+
+def _para(text):
+    """One body block with real line spacing.
+
+    Everything reaching here is escaped first: a finding can carry a path or an
+    address with angle brackets, and rich text would otherwise eat them.
+    """
+    return ('<div style="line-height:%d%%">%s</div>'
+            % (BODY_LS, escape(text).replace("\n", "<br>")))
 
 
 def _detail_lines(finding):
@@ -73,51 +230,155 @@ def _detail_lines(finding):
     return lines
 
 
+def _soft_shadow(widget):
+    """Depth without a picture.
+
+    QSS has no box-shadow (Qt rejects the property outright), so the layer under
+    a card is a graphics effect. Eleven of these measured +4.3 ms on a full
+    repaint of this window at a 940 px size (4.5 ms without them, 8.8 ms with),
+    which is why every card gets one and not just the ones on show.
+    """
+    effect = QGraphicsDropShadowEffect(widget)
+    effect.setBlurRadius(18)
+    effect.setOffset(0, 4)
+    effect.setColor(QColor(42, 46, 77, 46))
+    return effect
+
+
 class FindingCard(QFrame):
+    """One conclusion.
+
+    A green or gray row folds to its headline: measured on this machine, the
+    eleven of them go from 1356 px of board to 798 px at a 940 px window in two
+    columns, and the line it hides is one click away. Red and yellow start open -
+    they are the reason this window was opened.
+    """
+
     def __init__(self, finding, parent=None):
         super().__init__(parent)
         self.f = finding
+        self.folded = finding.status in (Status.GREEN, Status.GRAY)
         self.setObjectName("Card")
         self.setProperty("status", finding.status.value)
+        self.setGraphicsEffect(_soft_shadow(self))
         box = QVBoxLayout(self)
-        box.setContentsMargins(16, 13, 16, 13)
-        box.setSpacing(6)
+        box.setContentsMargins(16, 14, 16, 14)
+        box.setSpacing(8)
 
         top = QHBoxLayout()
-        top.setSpacing(8)
-        tag = QLabel("%s %s" % (MARK[finding.status], GLYPH[finding.status]))
-        tag.setObjectName("Tag")
-        tag.setStyleSheet("color:%s" % TAG_COLOR[finding.status])
+        top.setSpacing(10)
+        if not self.folded:
+            tag = QLabel("%s %s" % (MARK[finding.status], GLYPH[finding.status]))
+            tag.setObjectName("Tag")
+            tag.setProperty("status", finding.status.value)
+            top.addWidget(tag, 0, Qt.AlignTop)
         head = QLabel(finding.headline)
         head.setObjectName("Head")
         head.setWordWrap(True)
-        top.addWidget(tag, 0, Qt.AlignTop)
         top.addWidget(head, 1)
         box.addLayout(top)
 
+        body = []
         if finding.plain:
-            plain = QLabel(finding.plain)
+            plain = QLabel(_para(finding.plain))
+            plain.setTextFormat(Qt.RichText)
             plain.setObjectName("Plain")
             plain.setWordWrap(True)
             box.addWidget(plain)
-
+            body.append(plain)
         lines = _detail_lines(finding)
         if lines:
-            toggle = QPushButton(("怎么做（%d 条）" % len(finding.steps))
-                                 if finding.steps else "补充说明")
-            toggle.setCheckable(True)
-            toggle.setFlat(True)
-            toggle.setStyleSheet(
-                "color:#4a5261; background:transparent; border:none;"
-                "padding:2px 0; text-align:left; font-size:13px;")
-            detail = QLabel("\n".join(lines))
+            detail = QLabel(_para("\n".join(lines)))
+            detail.setTextFormat(Qt.RichText)
             detail.setObjectName("Steps")
             detail.setWordWrap(True)
             detail.setTextInteractionFlags(Qt.TextSelectableByMouse)
-            detail.setVisible(False)
-            toggle.toggled.connect(detail.setVisible)
-            box.addWidget(toggle)
             box.addWidget(detail)
+            body.append(detail)
+
+        self._fold = body if self.folded else ([detail] if lines else [])
+        self.toggle = None
+        if self._fold:
+            self.toggle = QPushButton()
+            self.toggle.setObjectName("Toggle")
+            self.toggle.setCheckable(True)
+            self.toggle.setFlat(True)
+            self.toggle.setCursor(Qt.PointingHandCursor)
+            box.addWidget(self.toggle)
+            self.toggle.toggled.connect(self._set_open)
+        self._set_open(not self.folded)
+
+    def _set_open(self, is_open):
+        for widget in self._fold:
+            widget.setVisible(is_open)
+        if self.toggle is not None:
+            n = len(self.f.steps)
+            if is_open:
+                self.toggle.setText("收起（%d 条）" % n if n else "收起")
+            else:
+                self.toggle.setText("怎么做（%d 条）" % n if n else "展开说明")
+
+
+class SpeechBubble(QFrame):
+    """The mascot's one line, drawn as a bubble with a tail pointing at her.
+
+    QSS cannot cut a tail out of a border, so this frame paints itself. The text
+    stays a child label: the wording gate reads it like any other label and the
+    gate that proves her line follows the result still calls .text() on this.
+    """
+
+    TAIL = 12
+
+    def __init__(self, text, parent=None):
+        super().__init__(parent)
+        self.setObjectName("Bubble")
+        # Maximum: handed the chance, a Preferred frame takes the whole banner
+        # column and the bubble reads as a bar across the window instead of one
+        # sentence. It still shrinks when the window goes narrow.
+        self.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
+        box = QVBoxLayout(self)
+        box.setContentsMargins(self.TAIL + 13, 9, 14, 9)
+        box.setSpacing(0)
+        self.label = QLabel(text)
+        self.label.setObjectName("HeroSay")
+        self.label.setWordWrap(True)
+        box.addWidget(self.label)
+        self._fit()
+
+    def _fit(self):
+        """Wide enough for the sentence on one line, no wider.
+
+        A word-wrapped label reports a small sizeHint, so Maximum alone gave her
+        a two-line bubble for a fourteen-character line. This is the width the
+        text actually wants; Maximum then caps the frame at it.
+        """
+        fm = self.label.fontMetrics()
+        want = fm.horizontalAdvance(self.label.text())
+        self.setMinimumWidth(want + self.TAIL + 13 + 14 + 4)
+
+    def text(self):
+        return self.label.text()
+
+    def setText(self, text):
+        self.label.setText(text)
+        self._fit()
+
+    def paintEvent(self, _event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        body = QRectF(self.TAIL + 1, 1, max(0, self.width() - self.TAIL - 3),
+                      max(0, self.height() - 3))
+        path = QPainterPath()
+        path.addRoundedRect(body, 13, 13)
+        tail = QPainterPath()
+        tail.moveTo(self.TAIL + 1, 11)
+        tail.lineTo(1, 17)
+        tail.lineTo(self.TAIL + 1, 23)
+        tail.closeSubpath()
+        painter.setPen(QPen(QColor("#2a2e4d"), 2))
+        painter.setBrush(QColor("#ffffff"))
+        painter.drawPath(path.united(tail))
+        painter.end()
 
 
 class MainWindow(QMainWindow):
@@ -131,6 +392,8 @@ class MainWindow(QMainWindow):
         self.last_meta = {}
         self.san_summary = ""
         self.counts = {}
+        self.quiet = 0
+        self.unread = 0
         self.report_folder = paths.report_dir()[0]
         self.report_written = False
         self.is_admin = paths.running_as_admin()
@@ -145,28 +408,63 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(QSS)
 
         root = QWidget()
+        root.setObjectName("Root")
         self.setCentralWidget(root)
         outer = QVBoxLayout(root)
-        outer.setContentsMargins(22, 20, 22, 12)
+        outer.setContentsMargins(20, 18, 20, 12)
         outer.setSpacing(12)
 
+        hero = QFrame()
+        hero.setObjectName("Hero")
+        # The banner hugs what it has to say. Full width plus a stretched bubble
+        # only moves the emptiness inside the frame.
+        hero.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
+        hero_row = QHBoxLayout(hero)
+        hero_row.setContentsMargins(16, 14, 18, 14)
+        hero_row.setSpacing(16)
+        art = QLabel()
+        art.setObjectName("HeroArt")
+        art.setFixedSize(118, 148)
+        art.setAlignment(Qt.AlignBottom | Qt.AlignHCenter)
+        pm = _mascot_pixmap(148)
+        if pm is not None:
+            art.setPixmap(pm)
+        self.hero_art = art
+        hero_row.addWidget(art, 0, Qt.AlignVCenter)
+
+        words = QVBoxLayout()
+        words.setSpacing(4)
         title = QLabel("系统简易体检仪")
         title.setObjectName("Title")
+        who = QLabel(MASCOT_NAME)
+        who.setObjectName("HeroName")
         subtitle = QLabel("只读取本机信息，不修改任何设置 · 全程离线 · 结果自动去掉个人身份信息")
         subtitle.setObjectName("Subtitle")
-        outer.addWidget(title)
-        outer.addWidget(subtitle)
+        self.hero_say = SpeechBubble(MASCOT_SAY["idle"])
+        for widget in (title, who, subtitle, self.hero_say):
+            words.addWidget(widget)
+        words.addStretch(1)
+        hero_row.addLayout(words, 1)
+        outer.addWidget(hero)
 
+        run_row = QHBoxLayout()
+        run_row.setSpacing(14)
         self.run_btn = QPushButton("开始体检")
         self.run_btn.setObjectName("Primary")
+        # Minimum/Preferred lets the row hand the leftover to the call to action:
+        # measured here at 151 px while its own text wants 132. Fixed keeps it to
+        # the text, and "正在体检…" still gets its 151 back when the text changes.
+        self.run_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.run_btn.clicked.connect(self.start_scan)
-        outer.addWidget(self.run_btn)
-
         self.progress = QProgressBar()
         self.progress.setTextVisible(False)
+        self.progress.setFixedWidth(230)
         self.progress.setRange(0, len(probes.PROBES))
         self.progress.setValue(0)
-        outer.addWidget(self.progress)
+        run_row.addWidget(self.run_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
+        run_row.addWidget(self.progress, 0, Qt.AlignVCenter)
+        run_row.addStretch(1)
+        outer.addLayout(run_row)
 
         self.step_label = QLabel("点上面的按钮开始，全程不需要联网，一般几秒钟。")
         self.step_label.setObjectName("Progress")
@@ -182,28 +480,40 @@ class MainWindow(QMainWindow):
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.board = QWidget()
-        self.board_layout = QVBoxLayout(self.board)
-        self.board_layout.setContentsMargins(0, 4, 0, 4)
-        self.board_layout.setSpacing(10)
-        self.board_layout.addStretch(1)
+        self.board.setObjectName("Board")
+        self.board_grid = QGridLayout(self.board)
+        self.board_grid.setContentsMargins(11, 11, 11, 11)
+        self.board_grid.setSpacing(9)
+        self.board_grid.setColumnStretch(0, 1)
+        self.board_grid.setColumnStretch(1, 1)
+        self._board_items = []
+        self._cols = 1
         self.scroll.setWidget(self.board)
         outer.addWidget(self.scroll, 1)
 
         actions = QHBoxLayout()
-        actions.setSpacing(10)
-        self.report_btn = QPushButton("生成报告（网页版＋文字版）")
+        actions.setSpacing(8)
+        # Short on the button, full in the tooltip: the four labels used to need
+        # 826 px and the window is allowed to go down to 760, where they spilled.
+        self.report_btn = QPushButton("生成报告")
+        self.report_btn.setToolTip("同时写出网页版和文字版两个文件")
         self.report_btn.setEnabled(False)
         self.report_btn.clicked.connect(self.make_report)
-        self.copy_btn = QPushButton("复制结果，发给帮我的人")
+        self.copy_btn = QPushButton("复制结果")
+        self.copy_btn.setToolTip("复制纯文字结果，粘贴给帮你看电脑的人")
         self.copy_btn.setEnabled(False)
         self.copy_btn.clicked.connect(self.copy_results)
-        self.open_btn = QPushButton("打开报告所在的文件夹")
+        self.open_btn = QPushButton("打开文件夹")
+        self.open_btn.setToolTip("打开报告所在的文件夹；程序不会自动替你打开")
         self.open_btn.setEnabled(False)
         self.open_btn.clicked.connect(self.open_folder)
-        self.admin_btn = QPushButton("用管理员身份重新体检")
+        self.admin_btn = QPushButton("用管理员身份再看一遍")
+        self.admin_btn.setToolTip("只有两处需要管理员权限：USB 的省电设置、"
+                                  "服务到底在不在运行")
         self.admin_btn.clicked.connect(self.relaunch_elevated)
         for widget in (self.report_btn, self.copy_btn, self.open_btn, self.admin_btn):
             actions.addWidget(widget)
+        actions.addStretch(1)
         outer.addLayout(actions)
 
         bar = QStatusBar()
@@ -225,6 +535,7 @@ class MainWindow(QMainWindow):
         self.verdict.setVisible(False)
         self.run_btn.setEnabled(False)
         self.run_btn.setText("正在体检…")
+        self.hero_say.setText(MASCOT_SAY["running"])
         self.progress.setRange(0, len(probes.PROBES))
         self.progress.setValue(0)
         self._t0 = time.perf_counter()
@@ -255,37 +566,108 @@ class MainWindow(QMainWindow):
     def on_broken(self, reason):
         self.step_label.setText("这一轮没能跑完，原因已经写进本机日志文件，"
                                 "请重新体检一次；如果反复出现，把日志发给人帮你看看。")
+        self.hero_say.setText(MASCOT_SAY["broken"])
         self.run_btn.setEnabled(True)
         self.run_btn.setText("重新体检")
         self.statusBar().showMessage("未完成：%s" % reason[:120])
 
     # ------------------------------------------------------------- rendering
+    TWO_COL_AT = 800
+
+    def _want_cols(self):
+        """Two columns only pay for themselves while a card still gets ~400 px.
+
+        Measured on this machine: at a 940 px window the column is 427 px and no
+        headline wraps; at the 760 px minimum two columns would give 342 px, so it
+        goes back to one column of 684 px instead of stacking wrapped text.
+        """
+        return 2 if self.scroll.viewport().width() >= self.TWO_COL_AT else 1
+
+    def _layout_board(self):
+        self._cols = self._want_cols()
+        while self.board_grid.count():
+            self.board_grid.takeAt(0)
+        cols = self._cols
+        # An empty column keeps its stretch, so leaving column one stretched while
+        # the board is in one column halved the card width: measured 342 px of a
+        # 706 px viewport and a 1810 px board. It has to be taken out.
+        self.board_grid.setColumnStretch(1, 1 if cols == 2 else 0)
+        row = col = 0
+        for widget, full in self._board_items:
+            if full:
+                if col:
+                    row += 1
+                    col = 0
+                self.board_grid.addWidget(widget, row, 0, 1, cols)
+                row += 1
+                continue
+            self.board_grid.addWidget(widget, row, col)
+            col += 1
+            if col >= cols:
+                col = 0
+                row += 1
+        self.board_grid.setRowStretch(row, 1)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if getattr(self, "_board_items", None) and self._want_cols() != self._cols:
+            self._layout_board()
+
     def _clear_board(self):
-        while self.board_layout.count() > 1:
-            item = self.board_layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
+        for widget, _full in self._board_items:
+            widget.setParent(None)
+            widget.deleteLater()
+        self._board_items = []
+        while self.board_grid.count():
+            self.board_grid.takeAt(0)
 
     def _render_board(self, elapsed, san):
         shown = [f for f in self.findings if not f.skip]
-        self.counts = {s: sum(1 for f in shown if f.status is s) for s in ORDER}
+        # The four numbers describe all conclusions, not only the cards: a row
+        # can be judged and still not take up space. Counting cards would report
+        # "未获取 0" while four readings were never obtained.
+        self.counts = {s: sum(1 for f in self.findings if f.status is s)
+                       for s in ORDER}
+        self.quiet = sum(1 for f in self.findings
+                         if f.skip and f.status is Status.GREEN)
+        self.unread = sum(1 for f in self.findings
+                          if f.skip and f.status is Status.GRAY)
         self.last_meta = report.build_meta(self.ctx, self.findings, san, elapsed)
-        self.verdict.setText(report.verdict(shown))
+        self.verdict.setText(report.verdict(self.findings))
         self.verdict.setVisible(True)
-        slot = self.board_layout.count() - 1
+        red = self.counts.get(Status.RED, 0)
+        yellow = self.counts.get(Status.YELLOW, 0)
+        if red:
+            self.hero_say.setText(MASCOT_SAY["fix"] % red)
+        elif yellow:
+            self.hero_say.setText(MASCOT_SAY["watch"] % yellow)
+        else:
+            self.hero_say.setText(MASCOT_SAY["clean"])
         for status in ORDER:
-            for finding in [f for f in shown if f.status is status]:
-                self.board_layout.insertWidget(slot, FindingCard(finding))
-                slot += 1
-        skipped = [f for f in self.findings if f.skip]
-        if skipped:
-            note = QLabel("另有 %d 项这次没有下判断（这台机器本来就没有这一项，"
-                          "或者普通权限看不到）。看不到不等于有问题，"
-                          "它们在生成的报告里能看到。" % len(skipped))
+            group = [f for f in shown if f.status is status]
+            if not group:
+                continue
+            head = QLabel("%s（%d 项）" % (GROUP_TITLE[status], len(group)))
+            head.setObjectName("GroupHead")
+            self._board_items.append((head, True))
+            for finding in group:
+                self._board_items.append((FindingCard(finding), False))
+        # Two different populations, so neither gets blamed for the other:
+        # judged-normal is not unread, and unread is not normal.
+        if self.quiet:
+            note = QLabel("另有 %d 项看过，结论正常，就不单独占一张卡；"
+                          "生成的报告里能看到全部。" % self.quiet)
             note.setObjectName("Progress")
             note.setWordWrap(True)
-            self.board_layout.insertWidget(slot, note)
+            self._board_items.append((note, True))
+        if self.unread:
+            note = QLabel("另有 %d 项这次没取到：这台机器本来就没有这一项，"
+                          "或者普通权限看不到。没取到不等于有问题，"
+                          "生成的报告里也写着。" % self.unread)
+            note.setObjectName("Progress")
+            note.setWordWrap(True)
+            self._board_items.append((note, True))
+        self._layout_board()
 
     def _status_counts(self):
         self.statusBar().showMessage(
@@ -323,7 +705,7 @@ class MainWindow(QMainWindow):
     def plain_text(self):
         shown = [f for f in self.findings if not f.skip]
         lines = ["【系统简易体检仪】体检结果",
-                 "总评：" + report.verdict(shown),
+                 "总评：" + report.verdict(self.findings),
                  self.san_summary, ""]
         for status in ORDER:
             group = [f for f in shown if f.status is status]
@@ -335,6 +717,13 @@ class MainWindow(QMainWindow):
                     lines.append("   " + f.plain)
                 lines.extend("   " + s for s in _detail_lines(f))
                 lines.append("")
+        # Whoever reads the paste needs to know the list above is not the whole
+        # set, so the two suppressed populations are named separately here too.
+        if self.quiet:
+            lines.append("另有 %d 项判过、结论正常，没有在这里逐条列出。" % self.quiet)
+        if self.unread:
+            lines.append("另有 %d 项这次没取到：这台机器本来就没有这一项，"
+                         "或者普通权限看不到。没取到不等于有问题。" % self.unread)
         return "\n".join(lines)
 
     def open_folder(self):

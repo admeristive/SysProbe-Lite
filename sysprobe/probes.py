@@ -678,7 +678,6 @@ def probe_disk(ctx):
                 headline="%s 盘剩余空间只有 %.0f GB" % (d["root"][0], free),
                 plain="不影响系统运行，但存不进去东西",
                 steps=["清理这个盘里的大文件，或把文件移动到空间充足的盘"],
-                skip=True,
             ))
     return out
 

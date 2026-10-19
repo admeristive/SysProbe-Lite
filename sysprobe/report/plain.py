@@ -23,7 +23,7 @@ def _block(out, line):
 def render(findings, meta):
     shown = [f for f in findings if not f.skip]
     skipped = [f for f in findings if f.skip]
-    counts = {s: sum(1 for f in shown if f.status is s) for s in ORDER}
+    counts = {s: sum(1 for f in findings if f.status is s) for s in ORDER}
 
     out = [DIVIDER, "系统简易体检仪 · 体检结果", DIVIDER]
     _block(out, "生成时间：%s" % meta.get("generated_at", ""))
@@ -68,17 +68,23 @@ def render(findings, meta):
                 out.append("   这一项用普通权限看不全，需要用管理员身份再体检一次")
             out.append("")
 
-    if skipped:
-        out.append("【本次没有下判断的项】%d 项" % len(skipped))
+    for title, group in (
+            ("【判过、结论正常，没单独列的项】",
+             [f for f in skipped if f.status is Status.GREEN]),
+            ("【这次没有取到的项】",
+             [f for f in skipped if f.status is not Status.GREEN])):
+        if not group:
+            continue
+        out.append("%s%d 项" % (title, len(group)))
         out.append("-" * 46)
-        for f in skipped:
+        for f in group:
             out.append("- %s" % f.headline)
             if f.plain:
                 out.append("  %s" % f.plain)
             if f.steps:
                 for n, step in enumerate(f.steps, 1):
                     out.append("  %d) %s" % (n, step))
-        out.append("")
+    out.append("")
 
     out.append(DIVIDER)
     out.append("报告文件位置：%s" % meta.get("report_path", ""))

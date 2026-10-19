@@ -23,7 +23,10 @@ a = Analysis(  # noqa: F821
     [os.path.join("sysprobe", "app.py")],
     pathex=[ROOT],
     binaries=[],
-    datas=[],
+    # The mascot is bundled, not fetched: the report and the window must both
+    # work with the network cable pulled. It lands in _internal/assets, which
+    # paths.asset_path() resolves the same way unpacked and frozen.
+    datas=[(os.path.join("assets"), "assets")],
     hiddenimports=[
         # Qt bindings import their C++ halves dynamically; without these the
         # frozen build dies on QApplication with a missing plugin, not a

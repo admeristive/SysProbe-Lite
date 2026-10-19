@@ -215,6 +215,19 @@ def check_spec():
                     "必须显式写 _internal，否则根目录会散出一堆 dll"))
     if "console=True" in text:
         out.append((spec, 0, "console", "窗口程序不应带控制台"))
+    # A missing artwork file in a frozen build does not raise - the banner just
+    # quietly loses its picture. That is exactly the kind of regression a static
+    # gate has to catch, because nobody sees it in the repo.
+    assets = os.path.join(ROOT, "assets")
+    if os.path.isdir(assets):
+        named = sorted(n for n in os.listdir(assets)
+                       if os.path.isfile(os.path.join(assets, n)))
+        if named:
+            compact = re.sub(r"\s+", "", text)
+            m = re.search(r"datas=\[(.*?)\]", compact)
+            if not m or "assets" not in m.group(1):
+                out.append((spec, 0, "素材没进包",
+                            "assets\\ 下有 %d 个文件，datas 里却没有它们" % len(named)))
     return out
 
 

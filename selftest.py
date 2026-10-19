@@ -4,6 +4,7 @@ This exists because a GUI cannot be reviewed on hardware you do not own. Use:
     py -3 selftest.py            # probes + sanitizer regression, no GUI, no writes
 """
 
+import ast
 import os
 import sys
 import time
@@ -449,6 +450,61 @@ def collectors_check():
     return stub_check() and live_check()
 
 
+def _suppress_sites(text, where):
+    """Split skip-flagged Finding calls into proven-red/yellow and unreadable."""
+    bad, unclear = [], []
+    for node in ast.walk(ast.parse(text)):
+        if not isinstance(node, ast.Call):
+            continue
+        name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+        if name != "Finding":
+            continue
+        kw = {k.arg: k.value for k in node.keywords}
+        if "skip" not in kw or ast.unparse(kw["skip"]) == "False":
+            continue
+        status = ast.unparse(kw["status"]).replace("\n", "") if "status" in kw else ""
+        if "RED" in status or "YELLOW" in status:
+            bad.append("%s:%d %s" % (where, node.lineno, status.split("=")[-1]))
+        elif "Status." not in status:
+            unclear.append("%s:%d" % (where, node.lineno))
+    return bad, unclear
+
+
+CONTROL_SUPPRESS = '''
+out.append(Finding(module="a", status=Status.RED, skip=True))
+out.append(Finding(module="b", status=Status.YELLOW, skip=True))
+out.append(Finding(module="c", status=Status.GREEN, skip=True))
+'''
+
+
+def skip_invariant_check():
+    """A red or yellow conclusion must never be born already suppressed.
+
+    This is read from the source, not from a live run, on purpose: this machine
+    has no nearly-full secondary drive, so scanning cannot produce the case that
+    broke - only reading every Finding call can.
+    """
+    print("\n== 抑制位不变量（红黄结论不许一出生就不占卡）==")
+    ok = []
+    control, _ = _suppress_sites(CONTROL_SUPPRESS, "<control>")
+    ok.append(case("探针自检：故意写 3 处，命中 2 处（绿的那处不算）",
+                   len(control) == 2, "、".join(control)))
+
+    hits, unclear, files = [], [], 0
+    for name in ("probes.py", "limits.py"):
+        path = os.path.join(ROOT, "sysprobe", name)
+        with open(path, "r", encoding="utf-8") as handle:
+            bad, grey = _suppress_sites(handle.read(), "sysprobe/" + name)
+        files += 1
+        hits += bad
+        unclear += grey
+    ok.append(case("源码里没有一处红黄结论带着抑制位出生", not hits,
+                   "、".join(hits) if hits else "已读 %d 个文件" % files))
+    print("   判不出状态的抑制位 %d 处（状态是变量，需人工看）：%s"
+          % (len(unclear), "、".join(unclear) if unclear else "无"))
+    return all(ok)
+
+
 def main():
     ctx = build_ctx()
     print("SysProbe-Lite selftest  |  python %s  |  %s  |  win11=%s"
@@ -463,7 +519,8 @@ def main():
     san = Sanitizer()
     encoding_check()
     show(findings, san)
-    ok = sanitizer_check() and live_identity_check(findings) and collectors_check()
+    ok = (sanitizer_check() and live_identity_check(findings)
+          and collectors_check() and skip_invariant_check())
     print("\n合计 %d 条结论，脱敏 %d 处，回归%s"
           % (len(findings), sum(san.stats.values()), "通过" if ok else "失败"))
     return 0 if ok else 1

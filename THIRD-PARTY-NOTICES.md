@@ -52,6 +52,17 @@ certutil -hashfile licenses\LGPL-3.0.txt SHA256
 - Python 许可：https://docs.python.org/3/license.html
 - PyInstaller 许可与引导器例外：https://pyinstaller.org
 
+## 界面插图（不是第三方组件）
+
+`assets\mascot.png` 是本项目界面顶部的插图。它由开发期在本仓库内用 AI 图像生成工具产出，
+不属于任何已有作品的角色，也没有从网络上下载——本项目的代码闸口禁止任何出网行为。
+产出后只用本机的一次性脚本做过背景透明处理，脚本不入库，仓库里只有处理完的那一张。
+
+入仓文件实测：669,653 字节、1024×1024、8 位 RGBA、非隔行，SHA256 前 16 位 `89ca3e6ba2a37ac5`。
+构建时随 `build.spec` 的 `datas` 复制到 `_internal\assets\mascot.png`；
+HTML 报告**不内嵌这张图**，报告仍然只有一个 `<style>`、零图片、零字体。
+它由 MIT 许可证覆盖，与源码同许可；如果你要分发修改后的发布包，连同 `LICENSE` 一起保留即可。
+
 ## 免责声明
 
 本程序按"现状"提供，不构成维修承诺；界面与报告里的所有判断都来自本机只读检查结果，

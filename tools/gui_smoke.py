@@ -1,18 +1,29 @@
 """GUI smoke test that never opens a visible window.
 
-Offscreen Qt proves the wiring a user actually depends on: the thread starts,
-signals land, the board renders, the report button writes files, the copy
-button produces text. It also machine-checks the product rule that raw
-Windows vocabulary must stay out of the window.
+Offscreen Qt was the obvious choice and it was wrong for measuring: with
+QT_QPA_PLATFORM=offscreen the metrics of "Microsoft YaHei" came out identical to
+a font that does not exist, so every height taken there is fiction (the board
+measured 1092 px offscreen and 1482 px on the real platform). This gate now runs
+on the real font engine and keeps the window unmapped with WA_DontShowOnScreen,
+then proves with IsWindowVisible that nothing reached the desktop.
+
+What it checks: the thread starts, signals land, the board renders, the report
+button writes files, the copy button produces text, the bottom bar still fits at
+the minimum window width, the banner actually paints the bundled artwork and its
+one line of speech follows the result, the product rule that raw Windows
+vocabulary stays out of the window, and the board skeleton - a call to action
+that is not stretched across the window, one column at the minimum width that
+still fills that column, a word for every status group, a shadow under every
+card, a tail on the speech bubble, and at least three conclusions on one screen.
 
 Run:  py -3 tools/gui_smoke.py
 """
 
 import os
+import re
 import sys
 import time
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -27,9 +38,26 @@ try:
 except Exception:
     pass
 
+import html as _html_mod
+
+from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
-from sysprobe import probes, scan  # noqa: E402
-from sysprobe.ui.main_window import FindingCard, MainWindow  # noqa: E402
+from sysprobe import paths, probes, scan  # noqa: E402
+from sysprobe.model import Status  # noqa: E402
+from sysprobe.ui.main_window import (  # noqa: E402
+    MASCOT_SAY, FindingCard, MainWindow, _mascot_pixmap,
+)
+
+
+def make_app():
+    """Real font engine first; offscreen only if the platform cannot start."""
+    try:
+        app = QApplication(sys.argv)
+        return app, "真实平台（度量可信）"
+    except Exception as exc:
+        os.environ["QT_QPA_PLATFORM"] = "offscreen"
+        app = QApplication(sys.argv)
+        return app, "退回 offscreen（高度数字会偏小，仅作接线检查）: %s" % exc
 
 
 def wait_until(window, seconds=90.0):
@@ -42,20 +70,67 @@ def wait_until(window, seconds=90.0):
     return False
 
 
+def strip_markup(text):
+    """A body label now carries rich-text markup for its line spacing. The word
+    gate has to read what a person sees, not the tags around it."""
+    return _html_mod.unescape(re.sub(r"<[^>]+>", " ", text))
+
+
 def labels(window):
     out = []
     for widget in window.findChildren(QLabel):
         text = widget.text()
         if text:
-            out.append((widget.objectName() or "label", text))
+            out.append((widget.objectName() or "label", strip_markup(text)))
     return out
 
 
+def fits_at_minimum(window):
+    """Measured on this machine: the four action buttons used to want 826 px
+    while the window is allowed down to 760. Re-check that every run."""
+    window.resize(window.minimumWidth(), window.minimumHeight())
+    QApplication.processEvents()
+    bar = sum(b.sizeHint().width() for b in (window.report_btn, window.copy_btn,
+                                             window.open_btn, window.admin_btn))
+    spare = window.width() - bar - 20
+    horiz = window.scroll.horizontalScrollBar().maximum()
+    window.resize(940, 700)
+    QApplication.processEvents()
+    return bar, spare, horiz
+
+
+def flush_layout(window):
+    """Let every pending layout request land before anything is measured.
+
+    Without this the numbers below are a mix of two states: the widget that
+    paints is still where the last pass left it, the widget that reports a
+    sizeHint has already moved on.
+    """
+    for _ in range(3):
+        QApplication.processEvents()
+        window.board_grid.activate()
+
+
+def is_mapped(window):
+    if not sys.platform.startswith("win"):
+        return False
+    try:
+        import ctypes
+        return bool(ctypes.windll.user32.IsWindowVisible(int(window.winId())))
+    except Exception:
+        return False
+
+
 def main():
-    app = QApplication(sys.argv)
+    app, platform_note = make_app()
     ctx = scan.build_ctx()
     window = MainWindow(ctx, entry_script=sys.argv[0])
+    window.setAttribute(Qt.WA_DontShowOnScreen, True)
     window.show()
+    QApplication.processEvents()
+    mapped = is_mapped(window)
+    print("度量平台：%s ｜ 窗口有没有真的显示到桌面：%s（应为 False）"
+          % (platform_note, mapped))
 
     print("窗口标题：%s ｜ 大小 %dx%d" % (window.windowTitle(),
                                           window.width(), window.height()))
@@ -68,6 +143,12 @@ def main():
 
     window.start_scan()
     ok = wait_until(window)
+    # The render posts a layout request that the loop above has already walked
+    # past: measured here, the call to action still carried the 151 px it needed
+    # for "正在体检…" while its text had gone back to 132, and the board's
+    # sizeHint was still the empty 22 px. A window on a desktop gets that pass
+    # for free; this one has to ask for it.
+    flush_layout(window)
     cards = window.findChildren(FindingCard)
     print("\n扫描完成：%s ｜ 看板卡片 %d 张" % (ok, len(cards)))
     print("进度：%d / %d ｜ 状态行：%s"
@@ -75,6 +156,58 @@ def main():
              window.step_label.text()))
     print("总评：%s" % window.verdict.text())
     print("状态栏：%s" % window.statusBar().currentMessage())
+
+    asset = paths.asset_path("mascot.png")
+    size = os.path.getsize(asset) if os.path.isfile(asset) else 0
+    painted = window.hero_art.pixmap()
+    art_ok = painted is not None and not painted.isNull()
+    scaled = _mascot_pixmap(148)
+    print("\n看板娘素材：%s ｜ %d 字节 ｜ 独立缩放 %s"
+          % (os.path.basename(asset), size,
+             "没产出" if scaled is None else "%dx%d" % (scaled.width(), scaled.height())))
+    print("横幅上真的画出了图：%s ｜ 她说的话：%s"
+          % (art_ok, window.hero_say.text()))
+    say_want = None
+    if ok:
+        red = window.counts.get(Status.RED, 0)
+        yellow = window.counts.get(Status.YELLOW, 0)
+        say_want = (MASCOT_SAY["fix"] % red if red
+                    else MASCOT_SAY["watch"] % yellow if yellow
+                    else MASCOT_SAY["clean"])
+        print("这句话该是：%s ｜ 数字对得上：%s"
+              % (say_want, window.hero_say.text() == say_want))
+
+    total = sum(window.counts.values())
+    print("\n四档计数合计 %d ｜ 结论 %d 条 ｜ 一致：%s"
+          % (total, len(window.findings), total == len(window.findings)))
+    print("看过且正常、不占卡 %d 项 ｜ 这次没取到 %d 项"
+          % (window.quiet, window.unread))
+    notes = [w.text() for w in window.findChildren(QLabel)
+             if w.objectName() == "Progress" and w.text().startswith("另有")]
+    for line in notes:
+        print("   看板说明条：%s" % line)
+    bar = window.statusBar().currentMessage()
+    bar_ok = ("未获取 %d" % window.counts.get(Status.GRAY, 0)) in bar
+    print("状态栏有没有把没取到的数报出来：%s（栏文：%s）"
+          % (bar_ok, bar[:46]))
+
+    print("\n看板骨架（乙档：宽度、层次、重复度都要有数）")
+    rb = window.run_btn
+    stretched = rb.width() - rb.sizeHint().width()
+    same_row = abs((rb.y() + rb.height() // 2)
+                   - (window.progress.y() + window.progress.height() // 2)) < 30
+    print("  主按钮 %d px（文字本身 %d px，被拉伸 %+d px）｜ 进度条与它同一行：%s"
+          % (rb.width(), rb.sizeHint().width(), stretched, same_row))
+    tags = [w for w in window.findChildren(QLabel) if w.objectName() == "Tag"]
+    heads = [w for w in window.findChildren(QLabel) if w.objectName() == "GroupHead"]
+    print("  分组标题 %d 个 ｜ 角标 %d 个（只挂在非正常项上）｜ 折叠卡 %d 张 ｜ 阴影 %d/%d 张"
+          % (len(heads), len(tags), sum(1 for c in cards if c.folded),
+             sum(1 for c in cards if c.graphicsEffect() is not None), len(cards)))
+    bimg = window.hero_say.grab().toImage()
+    kk = bimg.width() / float(max(1, window.hero_say.width()))
+    tail = bimg.pixelColor(int(3 * kk), int(17 * kk)).value()
+    print("  气泡尾巴尖那一点墨值 %d（<130 才算真画出一条尖）｜ 列数 %d ｜ 格里 %d 件"
+          % (tail, window._cols, window.board_grid.count()))
 
     text_labels = labels(window)
     dirty = [(name, t) for name, t in text_labels
@@ -97,7 +230,31 @@ def main():
     leak = [len(v) for v in live if v.lower() in blob.lower()]
     print("剪贴板文本里的本机身份：%s" % ("无" if not leak else leak))
 
+    bar, spare, horiz = fits_at_minimum(window)
+    print("收到最窄（%d px）时：底部按钮需要 %d px，余量 %+d px ｜ 横向滚动 %s"
+          % (window.minimumWidth(), bar, spare, "有" if horiz else "无"))
+    window.resize(window.minimumWidth(), window.minimumHeight())
+    flush_layout(window)
+    cols_min = window._cols
+    vp_min = window.scroll.viewport().width()
+    narrow_card = min(c.width() for c in cards)
+    board_min = window.board.sizeHint().height()
+    window.resize(940, 700)
+    flush_layout(window)
+    cols_wide = window._cols
+    vp = window.scroll.viewport()
+    per_screen = sum(1 for c in cards if c.y() + c.height() <= vp.height())
+    print("窗口 %d px -> 列数 %d ｜ 一张卡 %d px，占口宽 %d px 的 %d%% ｜ 板 %d px"
+          % (window.minimumWidth(), cols_min, narrow_card, vp_min,
+             round(narrow_card * 100.0 / max(1, vp_min)), board_min))
+    print("回到 940 px -> 列数 %d ｜ 板 %d px ｜ 一屏完整装下 %d 张 ｜ "
+          "滚动口 %d px ｜ 外框 %d px"
+          % (cols_wide, window.board.sizeHint().height(), per_screen,
+             vp.height(), window.height() - vp.height()))
+
     fails = []
+    if mapped:
+        fails.append("窗口被映射到了桌面（本该只在后台量）")
     if not ok:
         fails.append("线程没完成")
     if not cards:
@@ -108,6 +265,41 @@ def main():
         fails.append("报告没写出两个文件")
     if leak:
         fails.append("剪贴板泄露本机身份")
+    if spare < 0:
+        fails.append("最窄窗口放不下底部按钮")
+    if horiz:
+        fails.append("看板出现横向滚动条")
+    if not size:
+        fails.append("仓库里缺素材文件")
+    if scaled is None or not art_ok:
+        fails.append("看板娘没画上：素材读不到或解码失败")
+    if say_want is not None and window.hero_say.text() != say_want:
+        fails.append("横幅上那句话没跟着结果变")
+    if total != len(window.findings):
+        fails.append("四档计数与结论数对不上")
+    if not bar_ok:
+        fails.append("状态栏没把未获取的条数报出来")
+    if (window.quiet and not any("看过" in n for n in notes)) or \
+            (window.unread and not any("没取到" in n for n in notes)):
+        fails.append("看板说明条把两种情况混着说了")
+    if stretched > 8:
+        fails.append("主按钮又被拉成了通宽横幅")
+    if not same_row:
+        fails.append("进度条没和主按钮待在同一行")
+    if len(tags) != sum(1 for c in cards if not c.folded):
+        fails.append("正常项又挂上了重复角标")
+    if cards and any(c.graphicsEffect() is None for c in cards):
+        fails.append("卡片没挂上柔和阴影")
+    if tail > 130:
+        fails.append("看板娘的气泡尾巴没画出来")
+    if not heads:
+        fails.append("看板没有分组标题，状态只剩颜色在说话")
+    if cols_min != 1 or cols_wide != 2:
+        fails.append("两列没在最窄处退回单列")
+    if narrow_card * 10 < vp_min * 9:
+        fails.append("退回单列后卡片仍只占半行，另一半是空的")
+    if not 3 <= per_screen:
+        fails.append("一屏装不下三张结论，看板又变回翻页")
     print("\n%s（检查项 %d 只，结论 %d 条）"
           % ("通过" if not fails else "失败：" + "、".join(fails),
              len(probes.PROBES), len(window.findings)))

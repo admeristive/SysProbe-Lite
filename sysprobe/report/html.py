@@ -14,53 +14,71 @@ from ..model import GLYPH, ORDER, Status
 
 CSS = """
 *{box-sizing:border-box}
-body{margin:0;background:#f4f5f7;color:#1c1f24;
-font:16px/1.75 "Microsoft YaHei","微软雅黑","Segoe UI",sans-serif}
-.wrap{max-width:860px;margin:0 auto;padding:28px 20px 72px}
-h1{font-size:26px;margin:0 0 4px;letter-spacing:.5px}
-h2{font-size:19px;margin:34px 0 12px;padding-bottom:8px;
-border-bottom:1px solid #dfe2e7}
-.sub{color:#67707d;font-size:14px;margin:0 0 22px}
-.card{background:#fff;border:1px solid #dfe2e7;border-radius:8px;
-padding:18px 20px;margin:0 0 14px}
-.notice{background:#fffdf3;border:1px solid #e8dcae;border-radius:8px;
-padding:18px 20px;margin:0 0 26px}
-.notice b{color:#8a6d1b}
-.board{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 26px}
-.chip{flex:1 1 150px;background:#fff;border:1px solid #dfe2e7;border-radius:8px;
-padding:14px 16px}
-.chip .n{font-size:30px;font-weight:600;line-height:1.15}
-.chip .t{font-size:14px;color:#67707d}
-.row{background:#fff;border:1px solid #dfe2e7;border-left:5px solid #c9ced6;
-border-radius:8px;padding:16px 18px;margin:0 0 12px}
-.row.red{border-left-color:#c0392b}.row.yellow{border-left-color:#d8a400}
-.row.green{border-left-color:#2f9e63}.row.gray{border-left-color:#aab1bb}
-.tag{display:inline-block;font-size:13px;font-weight:600;padding:2px 10px;
-border-radius:11px;margin-right:10px;vertical-align:2px}
-.tag.red{background:#fbeceb;color:#a5322a}
-.tag.yellow{background:#fdf5e3;color:#8a6d1b}
-.tag.green{background:#e9f6ef;color:#227a4c}
-.tag.gray{background:#eef0f3;color:#5c6470}
-.head{font-size:18px;font-weight:600;margin:0 0 6px}
-.plain{margin:0 0 8px;color:#3a4250}
-.why{margin:0 0 8px;color:#67707d;font-size:14px}
-ol{margin:8px 0 0;padding-left:22px}
-ol li{margin:0 0 5px}
-.cmd{font-family:Consolas,"Courier New",monospace;font-size:14px;
-background:#eef0f3;border:1px solid #dfe2e7;border-radius:5px;
-padding:8px 10px;margin:10px 0 0;white-space:pre-wrap;word-break:break-all}
-.note{font-size:13px;color:#67707d;margin-top:8px}
-details{margin:10px 0 0}
-summary{cursor:pointer;color:#4a5261;font-size:14px}
-table{border-collapse:collapse;width:100%;font-size:14px;margin-top:8px}
-th,td{border:1px solid #dfe2e7;padding:6px 9px;text-align:left;
+body{margin:0;background:#e9eff9;color:#414a70;
+font:15px/1.8 "Microsoft YaHei","微软雅黑","Segoe UI",sans-serif
+;-webkit-font-smoothing:antialiased}
+::selection{background:#ffd9e7;color:#2a2e4d}
+.wrap{max-width:880px;margin:0 auto;padding:26px 24px 60px;
+background:#fbfdff;border:1px solid #cdd9ee;
+border-radius:18px 18px 4px 18px}
+h1{font-size:23px;font-weight:700;color:#2a2e4d;margin:0 0 3px}
+h2{font-size:16px;font-weight:700;color:#2a2e4d;margin:34px 0 12px;
+padding-bottom:7px;border-bottom:1px solid #cdd9ee}
+.sub{color:#78829f;font-size:13px;margin:0 0 24px}
+.card{background:#f5f7fb;border:1px solid #dce6f5;
+border-radius:12px 12px 4px 12px;padding:18px 20px;margin:0 0 12px}
+.notice{background:#fff8e8;border:2px solid #2a2e4d;
+border-radius:14px 14px 5px 14px;padding:16px 20px;margin:0 0 24px}
+.notice b{color:#2a2e4d}
+.notice p{margin:6px 0 0;color:#4a5480}
+.board{display:flex;flex-wrap:wrap;gap:9px;margin:0 0 24px}
+.chip{flex:1 1 150px;border:1px solid #dce6f5;
+border-radius:12px 12px 4px 12px;padding:12px 14px;background:#f5f7fb}
+.chip .n{font-size:25px;font-weight:700;line-height:1.25;color:#2a2e4d}
+.chip .t{font-size:12px;color:#78829f}
+.chip.red{background:#fff3f2;border-color:#f4cfcb}.chip.red .n{color:#c03a34}
+.chip.yellow{background:#fff8e8;border-color:#f0e0b6}.chip.yellow .n{color:#8a5c07}
+.chip.green{background:#f0f8f3;border-color:#c9e6d6}.chip.green .n{color:#1d7a52}
+.chip.gray{background:#f5f7fb}.chip.gray .n{color:#5b6690}
+.row{background:#f5f7fb;border:1px solid #dce6f5;
+border-radius:12px 12px 4px 12px;padding:15px 19px;margin:0 0 9px}
+.row.red{background:#fff3f2;border-color:#f4cfcb}
+.row.yellow{background:#fff8e8;border-color:#f0e0b6}
+.row.green{background:#f0f8f3;border-color:#c9e6d6}
+.row.gray{background:#f5f7fb;border-color:#dce6f5}
+.tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 10px;
+border-radius:10px 10px 4px 10px;margin-right:9px;vertical-align:2px;
+background:#93a0b5;color:#fff}
+.tag.red{background:#e2564f;color:#fff}
+.tag.yellow{background:#eaa11c;color:#3d2a05}
+.tag.green{background:#3fa877;color:#fff}
+.tag.gray{background:#93a0b5;color:#fff}
+.head{font-size:16px;font-weight:700;color:#2a2e4d;margin:0 0 5px}
+.plain{margin:0 0 6px;color:#414a70}
+.why{margin:0 0 6px;color:#78829f;font-size:13px}
+ol{margin:6px 0 0;padding-left:20px}
+ol li{margin:0 0 3px;color:#414a70}
+.cmd{font-family:Consolas,"Courier New",monospace;font-size:13px;
+background:#f4f7fd;border:1px solid #dce6f5;border-radius:8px;
+padding:8px 10px;margin:9px 0 0;white-space:pre-wrap;word-break:break-all}
+.note{font-size:12px;color:#78829f;margin-top:7px}
+details{margin:8px 0 0}
+summary{cursor:pointer;color:#5b6690;font-size:13px;font-weight:700}
+summary:hover{color:#e0518b}
+table{border-collapse:collapse;width:100%;font-size:13px;margin-top:8px}
+th,td{border:1px solid #dce6f5;padding:7px 10px;text-align:left;
 vertical-align:top}
-th{background:#f4f5f7;font-weight:600}
-.tech{font-family:Consolas,monospace;font-size:13px;color:#4a5261;
-word-break:break-all}
-.foot{margin-top:36px;padding-top:16px;border-top:1px solid #dfe2e7;
-color:#67707d;font-size:14px}
-@media print{body{background:#fff}.row,.card,.chip,.notice{border-color:#bbb}}
+th{background:#f4f7fd;font-weight:700;color:#2a2e4d}
+tr:nth-child(even) td{background:#f8fbff}
+.tech{font-family:Consolas,"Courier New",monospace;font-size:12px;
+color:#5b6690;word-break:break-all}
+.foot{margin-top:32px;padding-top:14px;border-top:1px solid #cdd9ee;
+color:#78829f;font-size:13px}
+@media (max-width:620px){body{padding:0}.wrap{padding:20px 14px 46px;
+border:none;border-radius:0}.chip{flex:1 1 120px}}
+@media print{body{background:#fff;font-size:12px}.wrap{border:none;
+background:#fff;padding:0}.row,.card,.chip,.notice,.cmd{border-color:#b9c3d8;
+break-inside:avoid}h2{break-after:avoid}}
 """
 
 LABEL = {Status.RED: "需处理", Status.YELLOW: "建议留意",
@@ -142,7 +160,7 @@ def _tech_table(findings, limit=40):
 def render(findings, meta):
     shown = [f for f in findings if not f.skip]
     skipped = [f for f in findings if f.skip]
-    counts = {s: sum(1 for f in shown if f.status is s) for s in ORDER}
+    counts = {s: sum(1 for f in findings if f.status is s) for s in ORDER}
 
     out = ['<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">',
            '<meta name="viewport" content="width=device-width,initial-scale=1">',
@@ -190,12 +208,19 @@ def render(findings, meta):
             out.append('<h2 style="font-size:16px;margin:20px 0 8px">%s</h2>' % E(title))
             out.extend(_row(f) for f in by_mod[title])
 
-    if skipped:
-        out.append("<h2>本次没有下判断的项（%d 项）</h2>" % len(skipped))
+    quiet = [f for f in skipped if f.status is Status.GREEN]
+    unread = [f for f in skipped if f.status is not Status.GREEN]
+    if quiet:
+        out.append("<h2>判过、结论正常的项（%d 项，不单独占一张卡）</h2>" % len(quiet))
+        out.append('<p class="note">这些项核对过了，没有异常，就不各列一条；'
+                   '原始读数在最下面的细节栏里都能看到。</p>')
+        out.extend(_row(f) for f in quiet)
+    if unread:
+        out.append("<h2>这次没有取到的项（%d 项）</h2>" % len(unread))
         out.append('<p class="note">这些项要么是这台机器本来就没有（台式机没电池），'
                    '要么是普通权限看不到，要么是程序只给查法、不给猜。'
-                   '看不到不等于有问题。</p>')
-        out.extend(_row(f) for f in skipped)
+                   '没取到不等于有问题。</p>')
+        out.extend(_row(f) for f in unread)
 
     out.append("<h2>给懂电脑的人看的细节</h2>")
     out.append('<div class="card"><details><summary>展开：每一项的原始读数'
