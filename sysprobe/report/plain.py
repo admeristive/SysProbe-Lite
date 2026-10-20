@@ -44,6 +44,8 @@ def render(findings, meta):
                   counts[Status.GREEN], counts[Status.GRAY]))
     if meta.get("verdict"):
         out.append(meta["verdict"])
+    if meta.get("history_line"):
+        out.append(meta["history_line"])
     out.append("")
 
     for status in (Status.RED, Status.YELLOW, Status.GREEN, Status.GRAY):

@@ -15,13 +15,14 @@ from html import escape
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
-    QApplication, QFrame, QGraphicsDropShadowEffect, QGridLayout, QHBoxLayout,
+    QApplication, QButtonGroup, QFrame, QGraphicsDropShadowEffect, QGridLayout,
+    QHBoxLayout,
     QLabel, QMainWindow, QProgressBar, QPushButton, QScrollArea, QSizePolicy,
     QStatusBar,
     QVBoxLayout, QWidget,
 )
 
-from .. import paths, probes, report
+from .. import history, paths, probes, report
 from ..model import GLYPH, MARK, ORDER, Finding, Status
 from ..probes import os_label
 from .elevate import relaunch_as_admin
@@ -82,6 +83,22 @@ QLabel#Tag[status="gray"]   { background: #93a0b5; color: #ffffff; }
 QLabel#Head  { font-size: 18px; font-weight: 700; color: #2a2e4d; }
 QLabel#Plain { font-size: 14px; color: #414a70; }
 QLabel#Steps { font-size: 14px; color: #4a5480; }
+
+QFrame#Symptom {
+    background: rgba(255, 255, 255, 0.66); border: 1px solid #cdd9ee;
+    border-radius: 14px; border-bottom-left-radius: 5px;
+}
+QPushButton#Chip {
+    padding: 3px 12px 2px; border: 2px solid #9fb3d8;
+    border-bottom-width: 4px; border-radius: 12px;
+    background: #ffffff; color: #414a70; font-weight: 400;
+}
+QPushButton#Chip:hover   { background: #f2f7ff; border-color: #2a2e4d; }
+QPushButton#Chip:pressed { border-bottom-width: 2px; }
+QPushButton#Chip:checked {
+    background: #ffe3ee; border-color: #e0518b; color: #2a2e4d;
+    font-weight: 700;
+}
 
 QPushButton {
     background: #ffffff; border: 2px solid #2a2e4d;
@@ -187,6 +204,21 @@ GROUP_TITLE = {
     Status.GREEN: "都正常的",
     Status.GRAY: "这次没取到的",
 }
+
+# A person says what hurts - they do not look up a module name. Six words, each
+# mapped onto keys the probes really emit (see MODULE_LABEL in the report), and
+# short enough that the row still fits one line at the 760 px minimum. Two
+# modules are deliberately on no chip (the icon marks and the restricted system
+# tools): nobody asks for them by symptom, so 都看 stays the way to see them.
+SYMPTOMS = (
+    ("开机慢", ("startup", "paging", "storage", "applist")),
+    ("上网卡", ("network", "nic")),
+    ("屏幕闪", ("display", "refresh", "drawlimits")),
+    ("没声音", ("audio",)),
+    ("自己重启", ("stability", "display")),
+    ("发烫", ("power",)),
+)
+SYMPTOM_ALL = "都看"
 
 
 def _mascot_pixmap(height):
@@ -394,6 +426,7 @@ class MainWindow(QMainWindow):
         self.counts = {}
         self.quiet = 0
         self.unread = 0
+        self.history_line = ""
         self.report_folder = paths.report_dir()[0]
         self.report_written = False
         self.is_admin = paths.running_as_admin()
@@ -477,6 +510,48 @@ class MainWindow(QMainWindow):
         self.verdict.setVisible(False)
         outer.addWidget(self.verdict)
 
+        # Six words of pain above the board. The row costs one line of height and
+        # it only appears once there is something to narrow - before a scan an
+        # empty filter bar is furniture. Filtering never touches the report: the
+        # chips decide what the window shows, nothing more.
+        self.symptom = None
+        self.symptom_box = QFrame()
+        self.symptom_box.setObjectName("Symptom")
+        self.symptom_box.setVisible(False)
+        chips = QHBoxLayout(self.symptom_box)
+        chips.setContentsMargins(12, 9, 12, 9)
+        chips.setSpacing(7)
+        self._chip_group = QButtonGroup(self)
+        self._chip_group.setExclusive(True)
+        self._all_chip = QPushButton(SYMPTOM_ALL)
+        self._all_chip.setObjectName("Chip")
+        self._all_chip.setCheckable(True)
+        self._all_chip.setChecked(True)
+        self._all_chip.setToolTip("把收起来的结论卡都放回来。")
+        self._all_chip.clicked.connect(lambda _c: self._apply_symptom(None))
+        self._chip_group.addButton(self._all_chip)
+        chips.addWidget(self._all_chip)
+        for word, _mods in SYMPTOMS:
+            chip = QPushButton(word)
+            chip.setObjectName("Chip")
+            chip.setCheckable(True)
+            chip.setToolTip("只看和“%s”对得上的结论，其余的先收起来；"
+                            "生成的报告里照旧是全部项目。" % word)
+            chip.clicked.connect(lambda _c, w=word: self._apply_symptom(w))
+            self._chip_group.addButton(chip)
+            chips.addWidget(chip)
+        # The comparison rides at the right end of the row the chips already
+        # occupy: measured at 940x700 a full-width line costs two of the four
+        # conclusions that fit without scrolling, while this label leaves the
+        # row at 49 px, the viewport at 217 px and the first screen at 4 cards.
+        # The window shows the count; the hover text and both reports carry the
+        # sentence with the module names in it.
+        self.compare = QLabel("")
+        self.compare.setObjectName("Progress")
+        chips.addWidget(self.compare)
+        chips.addStretch(1)
+        outer.addWidget(self.symptom_box)
+
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.board = QWidget()
@@ -486,7 +561,14 @@ class MainWindow(QMainWindow):
         self.board_grid.setSpacing(9)
         self.board_grid.setColumnStretch(0, 1)
         self.board_grid.setColumnStretch(1, 1)
-        self._board_items = []
+        self._board_rows = []
+        self._note_rows = []
+        self._heads = {}
+        self._quiet_mods = []
+        self._unread_mods = []
+        self._filter_note = QLabel(self.board)
+        self._filter_note.setObjectName("Progress")
+        self._filter_note.setWordWrap(True)
         self._cols = 1
         self.scroll.setWidget(self.board)
         outer.addWidget(self.scroll, 1)
@@ -529,6 +611,11 @@ class MainWindow(QMainWindow):
         self.findings = []
         self.san_summary = ""
         self._clear_board()
+        self.symptom = None
+        self._all_chip.setChecked(True)
+        self.symptom_box.setVisible(False)
+        self.compare.setText("")
+        self.compare.setToolTip("")
         self.report_btn.setEnabled(False)
         self.copy_btn.setEnabled(False)
         self.open_btn.setEnabled(self.report_written)
@@ -584,6 +671,12 @@ class MainWindow(QMainWindow):
         return 2 if self.scroll.viewport().width() >= self.TWO_COL_AT else 1
 
     def _layout_board(self):
+        """Place what the current filter allows, and say what it folded away.
+
+        Group headings are built here rather than stored once, because their count
+        has to be the number of cards actually on screen - a header reading 11 over
+        three cards is exactly the kind of mismatch this window cannot have.
+        """
         self._cols = self._want_cols()
         while self.board_grid.count():
             self.board_grid.takeAt(0)
@@ -592,32 +685,113 @@ class MainWindow(QMainWindow):
         # the board is in one column halved the card width: measured 342 px of a
         # 706 px viewport and a 1810 px board. It has to be taken out.
         self.board_grid.setColumnStretch(1, 1 if cols == 2 else 0)
-        row = col = 0
-        for widget, full in self._board_items:
-            if full:
-                if col:
-                    row += 1
-                    col = 0
-                self.board_grid.addWidget(widget, row, 0, 1, cols)
-                row += 1
+
+        mods = dict(SYMPTOMS).get(self.symptom) if self.symptom else None
+        cards = [r for r in self._board_rows
+                 if mods is None or r[2] in mods]
+        hidden = len(self._board_rows) - len(cards)
+
+        for status in ORDER:
+            n = sum(1 for r in cards if r[1] is status)
+            head = self._heads.get(status)
+            if not n:
+                if head:
+                    head.hide()
                 continue
-            self.board_grid.addWidget(widget, row, col)
-            col += 1
-            if col >= cols:
-                col = 0
+            if head is None:
+                head = QLabel(self.board)
+                head.setObjectName("GroupHead")
+                self._heads[status] = head
+            head.setText("%s（%d 项）" % (GROUP_TITLE[status], n))
+
+        if mods is None:
+            self._filter_note.clear()
+        else:
+            # A chip that lands on nothing is not a broken chip: on a healthy
+            # machine most of what matches that word was judged normal and folded
+            # into one line. Say that, or the filter reads like a missing answer.
+            side = []
+            quiet_hit = sum(1 for m in self._quiet_mods if m in mods)
+            unread_hit = sum(1 for m in self._unread_mods if m in mods)
+            if quiet_hit:
+                side.append("%d 项和“%s”有关，判成正常就没单独占卡"
+                            % (quiet_hit, self.symptom))
+            if unread_hit:
+                side.append("%d 项这台机器上看不到" % unread_hit)
+            if cards:
+                lead = ("只显示和“%s”对得上的 %d 条，其余 %d 条先收起来，"
+                        "点“%s”放回来。"
+                        % (self.symptom, len(cards), hidden, SYMPTOM_ALL))
+            else:
+                lead = ("“%s”这次没对上任何一张结论卡——没对上不等于没问题，"
+                        "点“%s”看全部 %d 条。"
+                        % (self.symptom, SYMPTOM_ALL, len(self._board_rows)))
+            text = lead
+            if side:
+                text += "另有 " + "；另有 ".join(side) + "。"
+            self._filter_note.setText(text + "生成的报告里写的都是全部。")
+
+        shown = set()
+        row = col = 0
+
+        def stack(widget):
+            """Add one full-width line, closing the current card row first."""
+            nonlocal row, col
+            if col:
                 row += 1
+                col = 0
+            self.board_grid.addWidget(widget, row, 0, 1, cols)
+            shown.add(id(widget))
+            row += 1
+
+        if mods is not None:
+            stack(self._filter_note)
+        for status in ORDER:
+            group = [r for r in cards if r[1] is status]
+            if not group:
+                continue
+            stack(self._heads[status])
+            for _kind, _st, _module, widget in group:
+                self.board_grid.addWidget(widget, row, col)
+                shown.add(id(widget))
+                col += 1
+                if col >= cols:
+                    col = 0
+                    row += 1
+        if mods is None:
+            for widget in self._note_rows:
+                stack(widget)
         self.board_grid.setRowStretch(row, 1)
+
+        everything = ([r[3] for r in self._board_rows] + list(self._heads.values())
+                      + list(self._note_rows) + [self._filter_note])
+        for widget in everything:
+            widget.setVisible(id(widget) in shown)
+
+    def _apply_symptom(self, word):
+        """Narrow the board to one complaint. Nothing here leaves the window."""
+        self.symptom = word
+        if word is None:
+            self._all_chip.setChecked(True)
+        self._layout_board()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if getattr(self, "_board_items", None) and self._want_cols() != self._cols:
+        if getattr(self, "_board_rows", None) and self._want_cols() != self._cols:
             self._layout_board()
 
     def _clear_board(self):
-        for widget, _full in self._board_items:
+        for _kind, _st, _module, widget in self._board_rows:
             widget.setParent(None)
             widget.deleteLater()
-        self._board_items = []
+        for widget in self._note_rows + list(self._heads.values()):
+            widget.setParent(None)
+            widget.deleteLater()
+        self._board_rows = []
+        self._note_rows = []
+        self._heads = {}
+        self._quiet_mods = []
+        self._unread_mods = []
         while self.board_grid.count():
             self.board_grid.takeAt(0)
 
@@ -628,11 +802,29 @@ class MainWindow(QMainWindow):
         # "未获取 0" while four readings were never obtained.
         self.counts = {s: sum(1 for f in self.findings if f.status is s)
                        for s in ORDER}
-        self.quiet = sum(1 for f in self.findings
-                         if f.skip and f.status is Status.GREEN)
-        self.unread = sum(1 for f in self.findings
-                          if f.skip and f.status is Status.GRAY)
-        self.last_meta = report.build_meta(self.ctx, self.findings, san, elapsed)
+        # The filter line has to name which modules the folded-away items came
+        # from, so keep the module keys next to the counts instead of deriving
+        # one from the other.
+        self._quiet_mods = [f.module for f in self.findings
+                           if f.skip and f.status is Status.GREEN]
+        self._unread_mods = [f.module for f in self.findings
+                            if f.skip and f.status is Status.GRAY]
+        self.quiet = len(self._quiet_mods)
+        self.unread = len(self._unread_mods)
+        # Compared before the report meta is built, so the file a person sends
+        # to whoever is helping them carries the same one line the window shows.
+        self.history_line = ""
+        try:
+            got = history.observe(self.findings, report.TOOL_VERSION,
+                                  self.ctx.rules.version, self.is_admin,
+                                  note=self.note)
+            self.history_line = got["text"]
+            self.compare.setText(got.get("short", ""))
+            self.compare.setToolTip(self.history_line)
+        except Exception as exc:
+            self.note("历史记录", "对比没跑成：%s" % type(exc).__name__)
+        self.last_meta = report.build_meta(self.ctx, self.findings, san, elapsed,
+                                           {"history_line": self.history_line})
         self.verdict.setText(report.verdict(self.findings))
         self.verdict.setVisible(True)
         red = self.counts.get(Status.RED, 0)
@@ -645,29 +837,28 @@ class MainWindow(QMainWindow):
             self.hero_say.setText(MASCOT_SAY["clean"])
         for status in ORDER:
             group = [f for f in shown if f.status is status]
-            if not group:
-                continue
-            head = QLabel("%s（%d 项）" % (GROUP_TITLE[status], len(group)))
-            head.setObjectName("GroupHead")
-            self._board_items.append((head, True))
             for finding in group:
-                self._board_items.append((FindingCard(finding), False))
+                self._board_rows.append(("card", status, finding.module,
+                                         FindingCard(finding)))
         # Two different populations, so neither gets blamed for the other:
-        # judged-normal is not unread, and unread is not normal.
+        # judged-normal is not unread, and unread is not normal. They are the
+        # board's own lines and a filter folds them away - the filter talks about
+        # the cards, not about them.
         if self.quiet:
             note = QLabel("另有 %d 项看过，结论正常，就不单独占一张卡；"
                           "生成的报告里能看到全部。" % self.quiet)
             note.setObjectName("Progress")
             note.setWordWrap(True)
-            self._board_items.append((note, True))
+            self._note_rows.append(note)
         if self.unread:
             note = QLabel("另有 %d 项这次没取到：这台机器本来就没有这一项，"
                           "或者普通权限看不到。没取到不等于有问题，"
                           "生成的报告里也写着。" % self.unread)
             note.setObjectName("Progress")
             note.setWordWrap(True)
-            self._board_items.append((note, True))
-        self._layout_board()
+            self._note_rows.append(note)
+        self.symptom_box.setVisible(bool(self._board_rows))
+        self._apply_symptom(None)
 
     def _status_counts(self):
         self.statusBar().showMessage(
@@ -707,6 +898,9 @@ class MainWindow(QMainWindow):
         lines = ["【系统简易体检仪】体检结果",
                  "总评：" + report.verdict(self.findings),
                  self.san_summary, ""]
+        if self.history_line:
+            lines.insert(2, self.history_line)
+            lines.insert(3, "")
         for status in ORDER:
             group = [f for f in shown if f.status is status]
             if not group:

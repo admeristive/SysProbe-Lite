@@ -134,8 +134,45 @@ def backfill_release_notes(fingerprint, zip_hex, zip_bytes, entries):
     return True
 
 
+def wipe_dist():
+    """Remove the previous release folder before building a new one.
+
+    PyInstaller replaces `_internal` and the exe but leaves anything else in
+    that folder alone - and the packaged exe writes its own reports into the
+    folder it lives in. So without this, the readings from whoever ran the
+    last build ride inside the next release zip, and the strict-root check
+    below only catches them after the archive is already written.
+    """
+    if not os.path.isdir(DIST):
+        return True
+    real = os.path.realpath(DIST)
+    if os.path.dirname(real) != os.path.realpath(os.path.join(ROOT, "dist")):
+        print("!! 发布目录不是预期位置，拒绝删除：%s" % real)
+        return False
+    removed = 0
+    bytes_ = 0
+    for base, _, names in os.walk(real):
+        for name in names:
+            removed += 1
+            try:
+                bytes_ += os.path.getsize(os.path.join(base, name))
+            except OSError:
+                pass
+    try:
+        shutil.rmtree(real)
+    except OSError as exc:
+        print("!! 旧发布目录删不掉，请先关掉正在运行的体检程序（%s）"
+              % type(exc).__name__)
+        return False
+    print("旧发布目录已清空重建（删掉上一次产出的 %d 个文件 / %d 字节）"
+          % (removed, bytes_))
+    return True
+
+
 def main():
     clean = "--clean" in sys.argv[1:]
+    if not wipe_dist():
+        return 1
     pyi = [sys.executable, "-m", "PyInstaller", "build.spec", "--noconfirm"]
     if clean:
         pyi.append("--clean")

@@ -5,6 +5,7 @@ This exists because a GUI cannot be reviewed on hardware you do not own. Use:
 """
 
 import ast
+import json
 import os
 import sys
 import time
@@ -18,8 +19,8 @@ try:
 except Exception:
     pass
 
-from sysprobe import evtlog, native, probes, rules  # noqa: E402
-from sysprobe.model import Status  # noqa: E402
+from sysprobe import evtlog, history, native, probes, rules  # noqa: E402
+from sysprobe.model import Finding, Status  # noqa: E402
 from sysprobe.sanitizer import Sanitizer  # noqa: E402
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -505,6 +506,89 @@ def skip_invariant_check():
     return all(ok)
 
 
+def F(module, kind, status):
+    return Finding(module=module, kind=kind, status=status, headline="占位标题")
+
+
+HIST_SETS = {
+    "same": [F("network", "proxy", Status.GREEN), F("storage", "space", Status.GREEN)],
+    "worse": [F("network", "proxy", Status.YELLOW),
+              F("storage", "space", Status.GREEN)],
+    "seen": [F("network", "proxy", Status.YELLOW), F("storage", "space", Status.GREEN),
+             F("audio", "device", Status.GREEN)],
+    "blind": [F("network", "proxy", Status.YELLOW), F("storage", "space", Status.GREEN),
+              F("audio", "device", Status.GRAY)],
+}
+
+
+def history_check():
+    """The compare layer, checked where a live scan cannot reach it.
+
+    A smoke run only ever sees this machine's one branch. Here the shapes are
+    invented, including the two that must never be reported as health: a
+    reading that only became visible, and a previous scan taken under another
+    version or another permission level. Written entirely into a temporary
+    folder - the program's own history file is not touched by a test.
+    """
+    print("\n== 历史对比（同机器不重跑也能验的几档）==")
+    ok = []
+    same_a = history.build(HIST_SETS["same"], "1.1.0", "r1", False)
+    same_b = history.build(HIST_SETS["same"], "1.1.0", "r1", False)
+    full, short = history.describe(same_a, same_b)
+    ok.append(case("结论没变时只说“没变化”，不编出数字",
+                   full == "结论和上次一条没变。" and short == "没变化", full))
+
+    worse = history.build(HIST_SETS["worse"], "1.1.0", "r1", False)
+    full, short = history.describe(same_a, worse)
+    ok.append(case("一项转黄：短句报数、长句点名是哪项",
+                   short == "建议留意多 1 项" and "网络上网" in full,
+                   "%s ｜ %s" % (short, full)))
+
+    blind = history.build(HIST_SETS["blind"], "1.1.0", "r1", False)
+    seen = history.build(HIST_SETS["seen"], "1.1.0", "r1", False)
+    full, _s = history.describe(blind, seen)
+    ok.append(case("看不到的项变能看到，不算变好也不算变坏",
+                   "比上次好" not in full and "比上次差" not in full
+                   and "这次能看到了" in full, full))
+
+    moved = history.describe(same_a, history.build(HIST_SETS["same"],
+                                                  "9.9.9", "r1", False))
+    prev, why = history.pick([dict(same_a, ver="9.9.9")], same_b)
+    ok.append(case("版本对不上时不比较", prev is None and why == "nomatch",
+                   str(moved[1])))
+    prev, why = history.pick([dict(same_a, admin=True)], same_b)
+    ok.append(case("权限对不上时也不比较", prev is None and why == "nomatch"))
+
+    tmp = os.path.join(tempfile.mkdtemp(prefix="sysprobe_hist_"), history.NAME)
+    rec = same_b
+    for _i in range(14):
+        history.save(tmp, rec, history.load(tmp)[0] if os.path.isfile(tmp) else [])
+    scans, state = history.load(tmp)
+    text = open(tmp, "rb").read()
+    ok.append(case("记录只留 %d 次（灌了 14 次）" % history.KEEP,
+                   state == "ok" and len(scans) == history.KEEP,
+                   "%d 条 / %d 字节" % (len(scans), len(text))))
+    ok.append(case("这份文件里没有一句人话（零隐私靠形状，不靠替换）",
+                   max(text) < 0x80 and "占位" not in text.decode("utf-8", "replace"),
+                   "%d 字节，纯 ASCII" % len(text)))
+
+    data = json.loads(text.decode("utf-8"))
+    data["scans"][0]["worst"]["network"] = "purple"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(data, handle, ensure_ascii=False)
+    scans, state = history.load(tmp)
+    ok.append(case("手改脏的记录被丢掉，其余照常能用",
+                   state == "ok" and len(scans) == history.KEEP - 1,
+                   "可用 %d 条" % len(scans)))
+    data["schema"] = 99
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(data, handle, ensure_ascii=False)
+    scans, state = history.load(tmp)
+    ok.append(case("看不懂的模式号就当没有记录，不瞎比",
+                   state == "schema" and not scans, str(state)))
+    return all(ok)
+
+
 def main():
     ctx = build_ctx()
     print("SysProbe-Lite selftest  |  python %s  |  %s  |  win11=%s"
@@ -520,7 +604,8 @@ def main():
     encoding_check()
     show(findings, san)
     ok = (sanitizer_check() and live_identity_check(findings)
-          and collectors_check() and skip_invariant_check())
+          and collectors_check() and skip_invariant_check()
+          and history_check())
     print("\n合计 %d 条结论，脱敏 %d 处，回归%s"
           % (len(findings), sum(san.stats.values()), "通过" if ok else "失败"))
     return 0 if ok else 1

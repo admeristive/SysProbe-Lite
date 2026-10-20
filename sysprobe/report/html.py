@@ -182,9 +182,11 @@ def render(findings, meta):
                       E(LABEL[status])))
     out.append("</div>")
 
-    out.append('<div class="card"><b>一句话总评</b><p>%s</p>'
+    hist = ('<p class="note">%s</p>' % E(meta["history_line"])
+            if meta.get("history_line") else "")
+    out.append('<div class="card"><b>一句话总评</b><p>%s</p>%s'
                '<p class="note">系统版本：%s ｜ 规则库：%s（%s 校订）｜ 隐私处理：%s</p></div>'
-               % (E(meta.get("verdict", "")), E(meta.get("os_label", "")),
+               % (E(meta.get("verdict", "")), hist, E(meta.get("os_label", "")),
                   E(meta.get("rules_version", "")), E(meta.get("rules_reviewed", "")),
                   E(meta.get("san_summary", ""))))
 

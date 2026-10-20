@@ -75,7 +75,7 @@ def _parse(argv):
 
 def _headless(flags, log):
     """Run one scan and write the reports. Used for verification without a screen."""
-    from sysprobe import probes, report, scan
+    from sysprobe import history, paths, probes, report, scan
     from sysprobe.model import Finding
     from sysprobe.sanitizer import Sanitizer
 
@@ -85,11 +85,17 @@ def _headless(flags, log):
     findings = scan.run(ctx)
     elapsed = (time.perf_counter() - started) * 1000.0
     shown = [Finding.from_dict(san.deep(f.to_dict())) for f in findings]
-    meta = report.build_meta(ctx, shown, san, elapsed)
+    # Same compare step as the window, so the report this path writes cannot
+    # grow a different definition of "和上次比" from the one on screen.
+    got = history.observe(shown, report.TOOL_VERSION, ctx.rules.version,
+                          paths.running_as_admin())
+    meta = report.build_meta(ctx, shown, san, elapsed,
+                             {"history_line": got["text"]})
     written = report.write(shown, meta)
     print("检查项 %d 个，用时 %.0f ms，结论 %d 条"
           % (len(probes.PROBES), elapsed, len(shown)))
     print(meta["verdict"])
+    print(got["text"])
     print(san.summary())
     print("HTML: %s" % written.get("html", ""))
     print("TXT : %s" % written.get("plain", ""))
