@@ -37,5 +37,5 @@ $kdir = Get-ChildItem 'C:\Program Files (x86)\Kaspersky Lab' -Directory
 foreach ($k in $kdir) { Write-Output ("  " + $k.Name) }
 
 Write-Output "== Anything exe-shaped under dist still present =="
-Get-ChildItem 'D:\XIAZ\Wiki\READ\black\SysProbe-Lite\dist' -Recurse -Filter '*.exe' |
+Get-ChildItem (Join-Path (Split-Path -Parent $PSScriptRoot) 'dist') -Recurse -Filter '*.exe' |
     ForEach-Object { Write-Output ("  " + $_.Name + " " + $_.Length + " bytes, lastwrite " + $_.LastWriteTime.ToString('s')) }
