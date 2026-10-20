@@ -10,74 +10,75 @@ on or to someone colour-blind.
 
 import html
 
+from .. import theme
 from ..model import GLYPH, ORDER, Status
 
 CSS = """
 *{box-sizing:border-box}
-body{margin:0;background:#e9eff9;color:#414a70;
+body{margin:0;background:%(page)s;color:%(text)s;
 font:15px/1.8 "Microsoft YaHei","微软雅黑","Segoe UI",sans-serif
 ;-webkit-font-smoothing:antialiased}
-::selection{background:#ffd9e7;color:#2a2e4d}
+::selection{background:%(sel_bg)s;color:%(ink)s}
 .wrap{max-width:880px;margin:0 auto;padding:26px 24px 60px;
-background:#fbfdff;border:1px solid #cdd9ee;
+background:%(paper)s;border:1px solid %(line)s;
 border-radius:18px 18px 4px 18px}
-h1{font-size:23px;font-weight:700;color:#2a2e4d;margin:0 0 3px}
-h2{font-size:16px;font-weight:700;color:#2a2e4d;margin:34px 0 12px;
-padding-bottom:7px;border-bottom:1px solid #cdd9ee}
-.sub{color:#78829f;font-size:13px;margin:0 0 24px}
-.card{background:#f5f7fb;border:1px solid #dce6f5;
+h1{font-size:23px;font-weight:700;color:%(ink)s;margin:0 0 3px}
+h2{font-size:16px;font-weight:700;color:%(ink)s;margin:34px 0 12px;
+padding-bottom:7px;border-bottom:1px solid %(line)s}
+.sub{color:%(mute)s;font-size:13px;margin:0 0 24px}
+.card{background:%(surface)s;border:1px solid %(line_card)s;
 border-radius:12px 12px 4px 12px;padding:18px 20px;margin:0 0 12px}
-.notice{background:#fff8e8;border:2px solid #2a2e4d;
+.notice{background:%(yellow_bg)s;border:2px solid %(ink)s;
 border-radius:14px 14px 5px 14px;padding:16px 20px;margin:0 0 24px}
-.notice b{color:#2a2e4d}
-.notice p{margin:6px 0 0;color:#4a5480}
+.notice b{color:%(ink)s}
+.notice p{margin:6px 0 0;color:%(text_soft)s}
 .board{display:flex;flex-wrap:wrap;gap:9px;margin:0 0 24px}
-.chip{flex:1 1 150px;border:1px solid #dce6f5;
-border-radius:12px 12px 4px 12px;padding:12px 14px;background:#f5f7fb}
-.chip .n{font-size:25px;font-weight:700;line-height:1.25;color:#2a2e4d}
-.chip .t{font-size:12px;color:#78829f}
-.chip.red{background:#fff3f2;border-color:#f4cfcb}.chip.red .n{color:#c03a34}
-.chip.yellow{background:#fff8e8;border-color:#f0e0b6}.chip.yellow .n{color:#8a5c07}
-.chip.green{background:#f0f8f3;border-color:#c9e6d6}.chip.green .n{color:#1d7a52}
-.chip.gray{background:#f5f7fb}.chip.gray .n{color:#5b6690}
-.row{background:#f5f7fb;border:1px solid #dce6f5;
+.chip{flex:1 1 150px;border:1px solid %(line_card)s;
+border-radius:12px 12px 4px 12px;padding:12px 14px;background:%(surface)s}
+.chip .n{font-size:25px;font-weight:700;line-height:1.25;color:%(ink)s}
+.chip .t{font-size:12px;color:%(mute)s}
+.chip.red{background:%(red_bg)s;border-color:%(red_line)s}.chip.red .n{color:%(red_ink)s}
+.chip.yellow{background:%(yellow_bg)s;border-color:%(yellow_line)s}.chip.yellow .n{color:%(yellow_ink)s}
+.chip.green{background:%(green_bg)s;border-color:%(green_line)s}.chip.green .n{color:%(green_ink)s}
+.chip.gray{background:%(surface)s}.chip.gray .n{color:%(mute_strong)s}
+.row{background:%(surface)s;border:1px solid %(line_card)s;
 border-radius:12px 12px 4px 12px;padding:15px 19px;margin:0 0 9px}
-.row.red{background:#fff3f2;border-color:#f4cfcb}
-.row.yellow{background:#fff8e8;border-color:#f0e0b6}
-.row.green{background:#f0f8f3;border-color:#c9e6d6}
-.row.gray{background:#f5f7fb;border-color:#dce6f5}
+.row.red{background:%(red_bg)s;border-color:%(red_line)s}
+.row.yellow{background:%(yellow_bg)s;border-color:%(yellow_line)s}
+.row.green{background:%(green_bg)s;border-color:%(green_line)s}
+.row.gray{background:%(surface)s;border-color:%(line_card)s}
 .tag{display:inline-block;font-size:12px;font-weight:700;padding:2px 10px;
 border-radius:10px 10px 4px 10px;margin-right:9px;vertical-align:2px;
-background:#93a0b5;color:#fff}
-.tag.red{background:#e2564f;color:#fff}
-.tag.yellow{background:#eaa11c;color:#3d2a05}
-.tag.green{background:#3fa877;color:#fff}
-.tag.gray{background:#93a0b5;color:#fff}
-.head{font-size:16px;font-weight:700;color:#2a2e4d;margin:0 0 5px}
-.plain{margin:0 0 6px;color:#414a70}
-.why{margin:0 0 6px;color:#78829f;font-size:13px}
+background:%(neutral)s;color:%(white)s}
+.tag.red{background:%(red_tag)s;color:%(white)s}
+.tag.yellow{background:%(yellow_tag)s;color:%(yellow_tag_text)s}
+.tag.green{background:%(green_tag)s;color:%(white)s}
+.tag.gray{background:%(neutral)s;color:%(white)s}
+.head{font-size:16px;font-weight:700;color:%(ink)s;margin:0 0 5px}
+.plain{margin:0 0 6px;color:%(text)s}
+.why{margin:0 0 6px;color:%(mute)s;font-size:13px}
 ol{margin:6px 0 0;padding-left:20px}
-ol li{margin:0 0 3px;color:#414a70}
+ol li{margin:0 0 3px;color:%(text)s}
 .cmd{font-family:Consolas,"Courier New",monospace;font-size:13px;
-background:#f4f7fd;border:1px solid #dce6f5;border-radius:8px;
+background:%(shelf)s;border:1px solid %(line_card)s;border-radius:8px;
 padding:8px 10px;margin:9px 0 0;white-space:pre-wrap;word-break:break-all}
-.note{font-size:12px;color:#78829f;margin-top:7px}
+.note{font-size:12px;color:%(mute)s;margin-top:7px}
 details{margin:8px 0 0}
-summary{cursor:pointer;color:#5b6690;font-size:13px;font-weight:700}
-summary:hover{color:#e0518b}
-table{border-collapse:collapse;width:100%;font-size:13px;margin-top:8px}
-th,td{border:1px solid #dce6f5;padding:7px 10px;text-align:left;
+summary{cursor:pointer;color:%(mute_strong)s;font-size:13px;font-weight:700}
+summary:hover{color:%(accent)s}
+table{border-collapse:collapse;width:100%%;font-size:13px;margin-top:8px}
+th,td{border:1px solid %(line_card)s;padding:7px 10px;text-align:left;
 vertical-align:top}
-th{background:#f4f7fd;font-weight:700;color:#2a2e4d}
-tr:nth-child(even) td{background:#f8fbff}
+th{background:%(shelf)s;font-weight:700;color:%(ink)s}
+tr:nth-child(even) td{background:%(zebra)s}
 .tech{font-family:Consolas,"Courier New",monospace;font-size:12px;
-color:#5b6690;word-break:break-all}
-.foot{margin-top:32px;padding-top:14px;border-top:1px solid #cdd9ee;
-color:#78829f;font-size:13px}
+color:%(mute_strong)s;word-break:break-all}
+.foot{margin-top:32px;padding-top:14px;border-top:1px solid %(line)s;
+color:%(mute)s;font-size:13px}
 @media (max-width:620px){body{padding:0}.wrap{padding:20px 14px 46px;
 border:none;border-radius:0}.chip{flex:1 1 120px}}
-@media print{body{background:#fff;font-size:12px}.wrap{border:none;
-background:#fff;padding:0}.row,.card,.chip,.notice,.cmd{border-color:#b9c3d8;
+@media print{body{background:%(white)s;font-size:12px}.wrap{border:none;
+background:%(white)s;padding:0}.row,.card,.chip,.notice,.cmd{border-color:%(print_line)s;
 break-inside:avoid}h2{break-after:avoid}}
 """
 
@@ -165,7 +166,7 @@ def render(findings, meta):
     out = ['<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">',
            '<meta name="viewport" content="width=device-width,initial-scale=1">',
            "<title>%s</title>" % E(meta.get("title", "系统体检报告")),
-           "<style>%s</style></head><body><div class=\"wrap\">" % CSS]
+           "<style>%s</style></head><body><div class=\"wrap\">" % (CSS % theme.P)]
 
     out.append("<h1>%s</h1>" % E(meta.get("title", "系统简易体检仪 · 体检报告")))
     out.append('<p class="sub">生成时间 %s ｜ 检查项 %s 个 ｜ 耗时 %s ｜ 权限：%s</p>'

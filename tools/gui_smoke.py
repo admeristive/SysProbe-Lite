@@ -12,9 +12,11 @@ button writes files, the copy button produces text, the bottom bar still fits at
 the minimum window width, the banner actually paints the bundled artwork and its
 one line of speech follows the result, the product rule that raw Windows
 vocabulary stays out of the window, and the board skeleton - a call to action
-that is not stretched across the window, one column at the minimum width that
-still fills that column, a word for every status group, a shadow under every
-card, a tail on the speech bubble, and at least three conclusions on one screen.
+that sits inside the mascot band without being stretched, the meter directly
+under that band, one column at the minimum width that still fills that column, a
+word for every status group, a shadow under every card, a three-pixel spine of
+the group's own colour painted on the left edge of every card, a tail on the
+speech bubble, and at least three conclusions on one screen.
 
 Run:  py -3 tools/gui_smoke.py
 """
@@ -41,11 +43,13 @@ except Exception:
 import html as _html_mod
 
 from PySide6.QtCore import Qt  # noqa: E402
-from PySide6.QtWidgets import QApplication, QLabel, QPushButton  # noqa: E402
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QPushButton  # noqa: E402
 from sysprobe import paths, probes, scan  # noqa: E402
-from sysprobe.model import Status  # noqa: E402
+from sysprobe.model import ORDER, Finding, Status  # noqa: E402
+from sysprobe import theme  # noqa: E402
 from sysprobe.ui.main_window import (  # noqa: E402
-    MASCOT_SAY, SYMPTOMS, SYMPTOM_ALL, FindingCard, MainWindow, _mascot_pixmap,
+    GROUP_TITLE, MASCOT_SAY, SYMPTOMS, SYMPTOM_ALL, FindingCard, MainWindow,
+    _mascot_pixmap, TAG_STATUS,
 )
 
 
@@ -198,10 +202,18 @@ def main():
     print("\n看板骨架（乙档：宽度、层次、重复度都要有数）")
     rb = window.run_btn
     stretched = rb.width() - rb.sizeHint().width()
-    same_row = abs((rb.y() + rb.height() // 2)
-                   - (window.progress.y() + window.progress.height() // 2)) < 30
-    print("  主按钮 %d px（文字本身 %d px，被拉伸 %+d px）｜ 进度条与它同一行：%s"
-          % (rb.width(), rb.sizeHint().width(), stretched, same_row))
+    band = window.findChild(QFrame, "Hero")
+    in_band = band is not None and band.rect().contains(
+        rb.geometry().center())
+    meter_under = (band is not None
+                   and window.progress.y() >= band.y() + band.height() - 2)
+    print("  主按钮 %d px（文字本身 %d px，被拉伸 %+d px）｜ 它就在横幅带里：%s ｜ 带高 %d px"
+          % (rb.width(), rb.sizeHint().width(), stretched, in_band,
+             0 if band is None else band.height()))
+    print("  进度条紧跟在横幅带下面：%s ｜ 和步骤文字同一行：%s"
+          % (meter_under,
+             abs((window.progress.y() + window.progress.height() // 2)
+                 - (window.step_label.y() + window.step_label.height() // 2)) < 12))
     tags = [w for w in window.findChildren(QLabel) if w.objectName() == "Tag"]
     heads = [w for w in window.findChildren(QLabel) if w.objectName() == "GroupHead"]
     print("  分组标题 %d 个 ｜ 角标 %d 个（只挂在非正常项上）｜ 折叠卡 %d 张 ｜ 阴影 %d/%d 张"
@@ -212,6 +224,69 @@ def main():
     tail = bimg.pixelColor(int(3 * kk), int(17 * kk)).value()
     print("  气泡尾巴尖那一点墨值 %d（<130 才算真画出一条尖）｜ 列数 %d ｜ 格里 %d 件"
           % (tail, window._cols, window.board_grid.count()))
+
+    # A spine only counts when the pixels are there: the sheet can ask for three
+    # pixels of colour and Qt can paint none of them. A healthy machine has no
+    # red or yellow card to look at, so whatever the board did not produce is
+    # painted from a stub instead - the four states get proven on every run.
+    spine_bad, spine_note = [], []
+    SPINE = {"red": "red_tag", "yellow": "yellow_tag",
+             "green": "green_tag", "gray": "neutral"}
+    for status in ORDER:
+        card = next((r[3] for r in window._board_rows if r[1] is status), None)
+        from_board = None
+        if card is None:
+            card = FindingCard(Finding(module="gate", status=status,
+                                       headline="闸门用的假结论",
+                                       plain="这一张只为量出左脊那三个像素。"),
+                               window.board)
+            card.resize(400, 80)
+            card.show()
+            from_board = card
+        img = card.grab().toImage()
+        px = img.pixelColor(1, img.height() // 2)
+        got = "#%02x%02x%02x" % (px.red(), px.green(), px.blue())
+        key = TAG_STATUS[status]
+        want = theme.P[SPINE[key]]
+        spine_note.append("%s %s%s" % (GROUP_TITLE[status], got,
+                                       "" if from_board is None else "（补画）"))
+        if got != want:
+            spine_bad.append("%s：表里写 %s，画出来 %s"
+                             % (GROUP_TITLE[status], want, got))
+        if from_board is not None:
+            from_board.setParent(None)
+            from_board.deleteLater()
+    print("  卡片左脊第一列：%s" % " ｜ ".join(spine_note))
+
+    # Same proof for the group heading's word. A healthy machine shows only the
+    # groups it has findings in, so the missing ones are painted from a stub the
+    # same way - a selector that silently does not match would leave them grey.
+    INK = {"red": "red_ink", "yellow": "yellow_ink",
+           "green": "green_ink", "gray": "mute_strong"}
+    head_bad, head_note = [], []
+    for status in ORDER:
+        real = window._heads.get(status)
+        extra = None
+        if real is not None and not real.isHidden() and real.width() >= 4:
+            head = real
+        else:
+            head = QLabel("%s（1 项）" % GROUP_TITLE[status], window.board)
+            head.setObjectName("GroupHead")
+            head.setProperty("status", TAG_STATUS[status])
+            head.resize(220, 26)
+            head.show()
+            extra = head
+        want = theme.P[INK[TAG_STATUS[status]]]
+        img = head.grab().toImage()
+        hit = sum(1 for y in range(img.height()) for x in range(img.width())
+                  if img.pixelColor(x, y).name() == want)
+        head_note.append("%s %d 点%s" % (GROUP_TITLE[status], hit,
+                                         "" if extra is None else "（补画）"))
+        if hit < 3:
+            head_bad.append(GROUP_TITLE[status])
+        if extra is not None:
+            extra.setParent(None)
+    print("  分组标题里正中色的字：%s" % " ｜ ".join(head_note))
 
     text_labels = labels(window)
     dirty = [(name, t) for name, t in text_labels
@@ -377,12 +452,18 @@ def main():
         fails.append("看板说明条把两种情况混着说了")
     if stretched > 8:
         fails.append("主按钮又被拉成了通宽横幅")
-    if not same_row:
-        fails.append("进度条没和主按钮待在同一行")
+    if not in_band:
+        fails.append("主按钮没待在横幅带里（上面那行几何数是从旧布局量的）")
+    if not meter_under:
+        fails.append("进度条没紧跟在横幅带下面")
     if len(tags) != sum(1 for c in cards if not c.folded):
         fails.append("正常项又挂上了重复角标")
     if cards and any(c.graphicsEffect() is None for c in cards):
         fails.append("卡片没挂上柔和阴影")
+    if spine_bad:
+        fails.append("状态左脊没画到像素上：%s" % "；".join(spine_bad))
+    if head_bad:
+        fails.append("分组标题没染上自己那档的颜色：%s" % "、".join(head_bad))
     if tail > 130:
         fails.append("看板娘的气泡尾巴没画出来")
     if not heads:

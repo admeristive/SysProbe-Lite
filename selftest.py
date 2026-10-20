@@ -21,6 +21,7 @@ except Exception:
 
 from sysprobe import evtlog, history, native, probes, rules  # noqa: E402
 from sysprobe.model import Finding, Status  # noqa: E402
+from sysprobe.report import html as html_report  # noqa: E402
 from sysprobe.sanitizer import Sanitizer  # noqa: E402
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -589,6 +590,43 @@ def history_check():
     return all(ok)
 
 
+FETCHABLE = ("<link", "<script", "@import", "url(", 'href="http', 'src="http')
+
+
+def offline_html_check():
+    """Nothing the report writes may reach the network when the file is opened.
+
+    README promises a self-contained file and no gate in the tree proved it, so
+    this one reads the rendered bytes. The needle is aimed at a planted sample
+    first: a list that matches nothing is the same as no list at all.
+    """
+    print("\n== 报告外联（打开文件不许自己发请求）==")
+    planted = ('<html><head><link rel="stylesheet" href="https://x/y.css">'
+               '<script src="https://a/j.js"></script>'
+               '<style>@import url(z.css);</style></head>')
+    caught = [t for t in FETCHABLE if t in planted.lower()]
+    ok = [case("探针自检：埋了四种写法，抓到 %d 种" % len(caught),
+               len(caught) >= 4, "、".join(caught))]
+    body = html_report.render(
+        [Finding(module="storage", kind="space", status=Status.RED,
+                 headline="占位标题", plain="占位一句。", steps=["占位步骤"],
+                 copy_cmd="https://example.com/a",
+                 native={"url": "ws://example.com"})],
+        {"title": "自检", "generated_at": "—", "probe_count": "1",
+         "elapsed_text": "—", "admin_text": "—"}).lower()
+    hit = [t for t in FETCHABLE if t in body]
+    ok.append(case("真实渲染里没有一种外取写法（网址只作为文字出现）",
+                   not hit, "、".join(hit)))
+    ok.append(case("样式段 1 个、图片 0 张、脚本 0 段（数出来的，不是写的）",
+                   body.count("<style") == 1 and "<img" not in body
+                   and "<script" not in body,
+                   "style %d ｜ img %d ｜ script %d"
+                   % (body.count("<style"), body.count("<img"),
+                      body.count("<script"))))
+    print("   渲染产出 %d 字" % len(body))
+    return all(ok)
+
+
 def main():
     ctx = build_ctx()
     print("SysProbe-Lite selftest  |  python %s  |  %s  |  win11=%s"
@@ -605,7 +643,7 @@ def main():
     show(findings, san)
     ok = (sanitizer_check() and live_identity_check(findings)
           and collectors_check() and skip_invariant_check()
-          and history_check())
+          and history_check() and offline_html_check())
     print("\n合计 %d 条结论，脱敏 %d 处，回归%s"
           % (len(findings), sum(san.stats.values()), "通过" if ok else "失败"))
     return 0 if ok else 1

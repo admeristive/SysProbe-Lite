@@ -22,148 +22,12 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from .. import history, paths, probes, report
+from .. import history, paths, probes, report, theme
 from ..model import GLYPH, MARK, ORDER, Finding, Status
 from ..probes import os_label
 from .elevate import relaunch_as_admin
 from .worker import ScanWorker
 
-QSS = """
-QMainWindow, QWidget#Root { background: #e9eff9; color: #414a70; }
-QWidget {
-    color: #414a70;
-    selection-background-color: #ffd9e7; selection-color: #2a2e4d;
-}
-QScrollArea {
-    background: rgba(255, 255, 255, 0.72); border: 1px solid #cdd9ee;
-    border-radius: 16px; border-bottom-left-radius: 5px;
-}
-QScrollArea > QWidget { background: transparent; }
-QScrollArea > QWidget > QWidget, QWidget#Board { background: transparent; }
-
-#Title    { font-size: 21px; font-weight: 700; color: #2a2e4d; }
-#Subtitle { font-size: 14px; color: #6b7597; }
-#Verdict  { font-size: 15px; font-weight: 700; color: #2a2e4d;
-            padding: 2px 0 0; }
-#Progress { font-size: 14px; color: #6b7597; }
-
-QFrame#Hero {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                stop:0 #ffffff, stop:1 #f2f7ff);
-    border: 2px solid #2a2e4d;
-    border-radius: 18px; border-bottom-right-radius: 8px;
-}
-QLabel#HeroName { font-size: 13px; font-weight: 700; color: #e0518b; }
-QLabel#HeroSay  { font-size: 14px; color: #2a2e4d; }
-
-QFrame#Card {
-    background: #f5f7fb; border: 1px solid #dce6f5;
-    border-radius: 14px; border-bottom-right-radius: 5px;
-}
-QFrame#Card[status="red"]    { background: #fff3f2; border-color: #f4cfcb; }
-QFrame#Card[status="yellow"] { background: #fff8e8; border-color: #f0e0b6; }
-QFrame#Card[status="green"]  { background: #f0f8f3; border-color: #c9e6d6; }
-QFrame#Card[status="gray"]   { background: #f5f7fb; border-color: #dce6f5; }
-
-QLabel#GroupHead {
-    font-size: 13px; font-weight: 700; color: #6b7597;
-    background: transparent; padding: 3px 2px 0;
-}
-QFrame#Bubble { background: transparent; border: none; }
-
-QLabel#Tag {
-    font-size: 12px; font-weight: 700; padding: 4px 11px;
-    border-radius: 10px; border-bottom-left-radius: 4px;
-    background: #93a0b5; color: #ffffff;
-}
-QLabel#Tag[status="red"]    { background: #e2564f; color: #ffffff; }
-QLabel#Tag[status="yellow"] { background: #eaa11c; color: #3d2a05; }
-QLabel#Tag[status="green"]  { background: #3fa877; color: #ffffff; }
-QLabel#Tag[status="gray"]   { background: #93a0b5; color: #ffffff; }
-QLabel#Head  { font-size: 18px; font-weight: 700; color: #2a2e4d; }
-QLabel#Plain { font-size: 14px; color: #414a70; }
-QLabel#Steps { font-size: 14px; color: #4a5480; }
-
-QFrame#Symptom {
-    background: rgba(255, 255, 255, 0.66); border: 1px solid #cdd9ee;
-    border-radius: 14px; border-bottom-left-radius: 5px;
-}
-QPushButton#Chip {
-    padding: 3px 12px 2px; border: 2px solid #9fb3d8;
-    border-bottom-width: 4px; border-radius: 12px;
-    background: #ffffff; color: #414a70; font-weight: 400;
-}
-QPushButton#Chip:hover   { background: #f2f7ff; border-color: #2a2e4d; }
-QPushButton#Chip:pressed { border-bottom-width: 2px; }
-QPushButton#Chip:checked {
-    background: #ffe3ee; border-color: #e0518b; color: #2a2e4d;
-    font-weight: 700;
-}
-
-QPushButton {
-    background: #ffffff; border: 2px solid #2a2e4d;
-    border-bottom-width: 4px; border-radius: 11px;
-    padding: 7px 15px 6px; font-size: 14px; font-weight: 700; color: #2a2e4d;
-    outline: none;
-}
-QPushButton:hover    { background: #f2f7ff; }
-QPushButton:pressed  { background: #e2ecff; border-bottom-width: 2px;
-                       padding: 8px 14px 3px; }
-QPushButton:focus    { border-color: #1f2340; }
-QPushButton:disabled { color: #aab3c8; background: #f2f4f8;
-                       border-color: #c9cfdb; }
-QPushButton#Toggle {
-    background: transparent; border: none; padding: 2px 0;
-    font-size: 13px; font-weight: 700; color: #5b6690; text-align: left;
-}
-QPushButton#Toggle:hover   { color: #e0518b; background: transparent;
-                             border: none; }
-QPushButton#Toggle:pressed { color: #b83c6a; background: transparent;
-                             border: none; }
-QPushButton#Primary {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                stop:0 #ee6b9d, stop:1 #d64a80);
-    border: 2px solid #2a2e4d; border-bottom-width: 6px; color: #ffffff;
-    font-size: 19px; font-weight: 700; padding: 11px 26px 8px;
-    border-radius: 14px; border-bottom-left-radius: 6px;
-}
-QPushButton#Primary:hover   { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #e75d92, stop:1 #c94476); border-color: #2a2e4d; }
-QPushButton#Primary:pressed { background: #bd3c6a; border-bottom-width: 3px;
-                              padding: 14px 26px 5px; border-color: #1f2340; }
-QPushButton#Primary:focus   { border-color: #1f2340; }
-QPushButton#Primary:disabled { background: #edc3d5; border-color: #c0b4c4;
-                               color: #fbf2f6; }
-
-QProgressBar {
-    background: #e2ebf8; border: 1px solid #cdd9ee; border-radius: 7px;
-    min-height: 12px; max-height: 12px;
-}
-QProgressBar::chunk {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                                stop:0 #6fc0f2, stop:1 #4aa3e8);
-    border-radius: 6px;
-}
-
-QScrollBar:vertical { background: transparent; width: 12px; margin: 2px; }
-QScrollBar::handle:vertical { background: #a9bcdd; border-radius: 5px;
-                              min-height: 34px; }
-QScrollBar::handle:vertical:hover   { background: #7f9ccd; }
-QScrollBar::handle:vertical:pressed { background: #6b8bc4; }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
-QScrollBar:horizontal, QScrollBar::add-line:horizontal,
-QScrollBar::sub-line:horizontal { height: 0; background: transparent; }
-
-QStatusBar {
-    background: #e9eff9; color: #6b7597; font-size: 13px;
-    border-top: 1px solid #cdd9ee;
-}
-QStatusBar::item { border: none; }
-QToolTip {
-    background: #2a2e4d; color: #f2f5ff; border: 1px solid #1f2340;
-    border-radius: 8px; padding: 6px 9px; font-size: 13px;
-}
-"""
 
 TAG_STATUS = {Status.RED: "red", Status.YELLOW: "yellow",
               Status.GREEN: "green", Status.GRAY: "gray"}
@@ -188,7 +52,7 @@ BODY_LS = 150
 MASCOT_NAME = "小检 · 本机体检员"
 MASCOT_FILE = "mascot.png"
 MASCOT_SAY = {
-    "idle": "点下面的按钮开始。我只读不改，全程不联网。",
+    "idle": "点旁边的按钮就开始。我只读不改，全程不联网。",
     "running": "正在逐条核对，稍等一下。",
     "clean": "都正常，没有要动的地方。",
     "watch": "没有要命的毛病，但有 %d 处值得留意，往下翻。",
@@ -273,7 +137,7 @@ def _soft_shadow(widget):
     effect = QGraphicsDropShadowEffect(widget)
     effect.setBlurRadius(18)
     effect.setOffset(0, 4)
-    effect.setColor(QColor(42, 46, 77, 46))
+    effect.setColor(QColor(*theme.SHADOW))
     return effect
 
 
@@ -407,8 +271,8 @@ class SpeechBubble(QFrame):
         tail.lineTo(1, 17)
         tail.lineTo(self.TAIL + 1, 23)
         tail.closeSubpath()
-        painter.setPen(QPen(QColor("#2a2e4d"), 2))
-        painter.setBrush(QColor("#ffffff"))
+        painter.setPen(QPen(QColor(theme.P["ink"]), 2))
+        painter.setBrush(QColor(theme.P["white"]))
         painter.drawPath(path.united(tail))
         painter.end()
 
@@ -438,7 +302,7 @@ class MainWindow(QMainWindow):
         self.resize(940, 700)
         self.setMinimumSize(760, 520)
         self.setFont(QFont("Microsoft YaHei", 10))
-        self.setStyleSheet(QSS)
+        self.setStyleSheet(theme.qss())
 
         root = QWidget()
         root.setObjectName("Root")
@@ -449,9 +313,8 @@ class MainWindow(QMainWindow):
 
         hero = QFrame()
         hero.setObjectName("Hero")
-        # The banner hugs what it has to say. Full width plus a stretched bubble
-        # only moves the emptiness inside the frame.
-        hero.setSizePolicy(QSizePolicy.Maximum, QSizePolicy.Preferred)
+        # The band spans the window instead of hugging its own text: the call to
+        # action lives inside it now, to the mascot's right.
         hero_row = QHBoxLayout(hero)
         hero_row.setContentsMargins(16, 14, 18, 14)
         hero_row.setSpacing(16)
@@ -473,36 +336,39 @@ class MainWindow(QMainWindow):
         who.setObjectName("HeroName")
         subtitle = QLabel("只读取本机信息，不修改任何设置 · 全程离线 · 结果自动去掉个人身份信息")
         subtitle.setObjectName("Subtitle")
+        subtitle.setWordWrap(True)
         self.hero_say = SpeechBubble(MASCOT_SAY["idle"])
         for widget in (title, who, subtitle, self.hero_say):
             words.addWidget(widget)
         words.addStretch(1)
         hero_row.addLayout(words, 1)
-        outer.addWidget(hero)
 
-        run_row = QHBoxLayout()
-        run_row.setSpacing(14)
         self.run_btn = QPushButton("开始体检")
         self.run_btn.setObjectName("Primary")
-        # Minimum/Preferred lets the row hand the leftover to the call to action:
-        # measured here at 151 px while its own text wants 132. Fixed keeps it to
-        # the text, and "正在体检…" still gets its 151 back when the text changes.
+        # Fixed keeps the button to its own text: the band would otherwise hand it
+        # the leftover width, and "正在体检…" still grows it back to 151 px.
         self.run_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.run_btn.clicked.connect(self.start_scan)
+        hero_row.addWidget(self.run_btn, 0, Qt.AlignRight | Qt.AlignVCenter)
+        outer.addWidget(hero)
+
+        # One line for the meter and the line that names the step it is on. They
+        # used to be two lines with the button on a third of its own: measured at
+        # 940x700 that stack left the board 217 px of viewport inside 483 px of
+        # chrome, and the board is the reason this window exists.
         self.progress = QProgressBar()
         self.progress.setTextVisible(False)
         self.progress.setFixedWidth(230)
         self.progress.setRange(0, len(probes.PROBES))
         self.progress.setValue(0)
-        run_row.addWidget(self.run_btn, 0, Qt.AlignLeft | Qt.AlignVCenter)
-        run_row.addWidget(self.progress, 0, Qt.AlignVCenter)
-        run_row.addStretch(1)
-        outer.addLayout(run_row)
-
         self.step_label = QLabel("点上面的按钮开始，全程不需要联网，一般几秒钟。")
         self.step_label.setObjectName("Progress")
         self.step_label.setWordWrap(True)
-        outer.addWidget(self.step_label)
+        status_row = QHBoxLayout()
+        status_row.setSpacing(14)
+        status_row.addWidget(self.progress, 0, Qt.AlignVCenter)
+        status_row.addWidget(self.step_label, 1)
+        outer.addLayout(status_row)
 
         self.verdict = QLabel("")
         self.verdict.setObjectName("Verdict")
@@ -701,6 +567,7 @@ class MainWindow(QMainWindow):
             if head is None:
                 head = QLabel(self.board)
                 head.setObjectName("GroupHead")
+                head.setProperty("status", TAG_STATUS[status])
                 self._heads[status] = head
             head.setText("%s（%d 项）" % (GROUP_TITLE[status], n))
 
