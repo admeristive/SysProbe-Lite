@@ -83,9 +83,9 @@
 
 发布附件：`SysProbe-Lite_v1.1.0_Portable.zip`
 
-- 压缩包大小：**45,970,646 字节（43.84 MB）**，165 个条目，ZIP_DEFLATED level 9
-- 压缩包 SHA256：`2b1dbfc19a102c057a3e62a246cb03c185385ea4e580be708094c4054669e058`
-- 主程序 `双击运行体检.exe` 官方指纹（SHA256）：`38b28b306959fbdeb958dd1494e3774ee60df9c5693a998366e3a94654aecf1f`
+- 压缩包大小：**45,992,292 字节（43.86 MB）**，165 个条目，ZIP_DEFLATED level 9
+- 压缩包 SHA256：`76c212a11a9852b00c7dc0819151c20e2498683bdcd9ac22f3bda8dc66278962`
+- 主程序 `双击运行体检.exe` 官方指纹（SHA256）：`fefacc01862a6f94bab9f01095c76a3c5d4f79ceba5d0124a6c5c2ec961a1bc0`
 - 以上三行由 `tools/build.py` 在每次打包后逐字回填，与包内 `必须看的使用说明.txt` 同源；
   手动改数码数会被构建断言拦下（不一致就构建失败，不会发布）。
 - 该指纹已逐字写进包内 `必须看的使用说明.txt`，每次打包由 `tools/build.py` 自动回填，
