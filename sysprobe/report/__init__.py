@@ -49,6 +49,7 @@ def verdict(items):
 
 def build_meta(ctx, findings, san, elapsed_ms, extra=None):
     from .. import probes as _p
+    from .. import quicklook as _ql
     admin = paths.running_as_admin()
     meta = {
         "title": "系统简易体检仪 · 体检报告",
@@ -64,6 +65,11 @@ def build_meta(ctx, findings, san, elapsed_ms, extra=None):
         "rules_error": ctx.rules.load_error,
         "verdict": verdict(findings),
         "probe_count": len(_p.PROBES),
+        # Taken here instead of handed in by the caller: the window and the
+        # no-screen run both build meta through this one place, so a report can
+        # never be written without the line, and the numbers are as fresh as
+        # the rest of the report.
+        "quicklook_line": _ql.glance() or "",
         "elapsed_text": "%.1f 秒" % (elapsed_ms / 1000.0),
         "counts": {s: sum(1 for f in findings if f.status is s) for s in Status},
     }

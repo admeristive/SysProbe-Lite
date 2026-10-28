@@ -10,7 +10,7 @@ on or to someone colour-blind.
 
 import html
 
-from .. import theme
+from .. import manual, quicklook, theme
 from ..model import GLYPH, ORDER, Status
 
 CSS = """
@@ -172,6 +172,9 @@ def render(findings, meta):
     out.append('<p class="sub">生成时间 %s ｜ 检查项 %s 个 ｜ 耗时 %s ｜ 权限：%s</p>'
                % (E(meta.get("generated_at", "")), E(str(meta.get("probe_count", ""))),
                   E(meta.get("elapsed_text", "")), E(meta.get("admin_text", ""))))
+    if meta.get("quicklook_line"):
+        out.append('<p class="sub">顺手量一眼：%s<br>%s</p>'
+                   % (E(meta["quicklook_line"]), E(quicklook.NOTE)))
 
     out.append('<div class="notice"><b>先读这一段</b><p>%s</p></div>' % DISCLAIMER)
 
@@ -229,6 +232,11 @@ def render(findings, meta):
     out.append('<div class="card"><details><summary>展开：每一项的原始读数'
                '（已去掉姓名、机器名、IP、网卡地址等个人信息）</summary>%s</details></div>'
                % _tech_table(shown + skipped))
+
+    out.append("<h2>%s</h2>" % E(manual.ASK_TITLE))
+    out.append('<div class="card"><p>%s</p><ol>%s</ol></div>'
+               % (E(manual.ASK_ONE),
+                  "".join("<li>%s</li>" % E(line) for line in manual.ASK_LINES)))
 
     out.append('<div class="foot">报告文件：%s%s</div>'
                % (E(meta.get("report_path", "")),

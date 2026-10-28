@@ -187,6 +187,21 @@ QLabel#Head  { font-size: 18px; font-weight: 700; color: %(ink)s; }
 QLabel#Plain { font-size: 14px; color: %(text)s; }
 QLabel#Steps { font-size: 14px; color: %(text_soft)s; }
 
+QTabWidget::pane {
+    border: 1px solid %(line_card)s; border-radius: 12px;
+    background: %(paper)s; top: -1px;
+}
+QTabBar::tab {
+    font-size: 13px; color: %(mute)s; background: transparent;
+    padding: 6px 11px 5px; border: 1px solid %(line_card)s;
+    border-bottom: none; border-top-left-radius: 11px;
+    border-top-right-radius: 11px;
+}
+QTabBar::tab:selected {
+    color: %(ink)s; font-weight: 700; background: %(paper)s;
+}
+QTabBar::tab:hover { color: %(ink)s; background: %(hover)s; }
+
 QFrame#Symptom {
     background: %(glass_soft)s; border: 1px solid %(line)s;
     border-radius: 14px; border-bottom-left-radius: 5px;

@@ -570,8 +570,8 @@ def probe_hosts(ctx):
     if len(blocked) >= 3:
         return [Finding(
             module="network", status=Status.YELLOW, kind="hosts_tampered",
-            headline="hosts 文件里有 %d 条指向本机的拦截记录" % len(blocked),
-            plain="某些网站会打不开并显示无法访问，但 QQ、微信正常——这就是它造成的",
+            headline="hosts 里有 %d 条拦截记录" % len(blocked),
+            plain="有的网站打不开，别的都正常——就是它造成的",
             why="常见于\"系统优化软件\"、杀毒软件的广告拦截，或手动照教程改过",
             steps=["按 Win 键 + R，输入 notepad C:\\Windows\\System32\\drivers\\etc\\hosts 后回车",
                    "只看不改：把开头不是 # 的行记下来，交给懂的人或回原软件里关掉拦截",

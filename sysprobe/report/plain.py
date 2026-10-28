@@ -5,6 +5,7 @@ only formats. It deliberately carries the same step lists as the HTML report;
 a screenshot-free conversation still needs the fix instructions.
 """
 
+from .. import manual, quicklook
 from ..model import GLYPH, ORDER, Status
 
 DISCLAIMER = (
@@ -32,6 +33,9 @@ def render(findings, meta):
     _block(out, "隐私处理：%s" % meta.get("san_summary", ""))
     _block(out, "程序版本：%s / 规则库：%s" % (meta.get("tool_version", ""),
                                              meta.get("rules_version", "")))
+    if meta.get("quicklook_line"):
+        _block(out, "顺手量一眼：%s" % meta["quicklook_line"])
+        _block(out, quicklook.NOTE)
     out.append("")
     out.append("先读这一段")
     out.append("-" * 46)
@@ -86,6 +90,12 @@ def render(findings, meta):
             if f.steps:
                 for n, step in enumerate(f.steps, 1):
                     out.append("  %d) %s" % (n, step))
+    out.append("")
+    out.append(manual.ASK_TITLE)
+    out.append("-" * 46)
+    out.append(manual.ASK_ONE)
+    for n, line in enumerate(manual.ASK_LINES, 1):
+        out.append("%d) %s" % (n, line))
     out.append("")
 
     out.append(DIVIDER)

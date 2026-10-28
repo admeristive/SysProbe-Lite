@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from .. import history, paths, probes, report, theme
+from .. import history, paths, probes, quicklook, report, theme
 from ..model import GLYPH, MARK, ORDER, Finding, Status
 from ..probes import os_label
 from .elevate import relaunch_as_admin
@@ -69,9 +69,9 @@ GROUP_TITLE = {
     Status.GRAY: "这次没取到的",
 }
 
-# A person says what hurts - they do not look up a module name. Six words, each
-# mapped onto keys the probes really emit (see MODULE_LABEL in the report), and
-# short enough that the row still fits one line at the 760 px minimum. Two
+# A person says what hurts - they do not look up a module name. Eight words,
+# each mapped onto keys the probes really emit (see MODULE_LABEL in the report),
+# and short enough that the row still fits one line at the 760 px minimum. Two
 # modules are deliberately on no chip (the icon marks and the restricted system
 # tools): nobody asks for them by symptom, so 都看 stays the way to see them.
 SYMPTOMS = (
@@ -81,6 +81,8 @@ SYMPTOMS = (
     ("没声音", ("audio",)),
     ("自己重启", ("stability", "display")),
     ("发烫", ("power",)),
+    ("闪退", ("display", "stability", "paging")),
+    ("盘满了", ("storage", "paging", "applist", "startup")),
 )
 SYMPTOM_ALL = "都看"
 
@@ -192,7 +194,13 @@ class FindingCard(QFrame):
             box.addWidget(detail)
             body.append(detail)
 
-        self._fold = body if self.folded else ([detail] if lines else [])
+        # A card that is taller than the viewport is the one failure this window
+        # cannot carry: measured today, a single three-step conclusion stood
+        # 364 px against a 281 px viewport and took 一屏装下 to zero. Long step
+        # lists therefore start folded behind 怎么做, while a short explanation
+        # (the verdict's own "why") stays on screen where it costs one line.
+        self._fold = body if self.folded else (
+            [detail] if lines and len(lines) >= 3 else [])
         self.toggle = None
         if self._fold:
             self.toggle = QPushButton()
@@ -200,9 +208,14 @@ class FindingCard(QFrame):
             self.toggle.setCheckable(True)
             self.toggle.setFlat(True)
             self.toggle.setCursor(Qt.PointingHandCursor)
-            box.addWidget(self.toggle)
+            # It rides in the headline row instead of taking a row of its own:
+            # measured here, one row of toggle cost every card on the board 30
+            # px, and 30 px was the difference between three conclusions on the
+            # first screen and one.
+            self.toggle.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            top.addWidget(self.toggle, 0, Qt.AlignTop | Qt.AlignRight)
             self.toggle.toggled.connect(self._set_open)
-        self._set_open(not self.folded)
+        self._set_open(not self.folded and not self._fold)
 
     def _set_open(self, is_open):
         for widget in self._fold:
@@ -441,6 +454,12 @@ class MainWindow(QMainWindow):
 
         actions = QHBoxLayout()
         actions.setSpacing(8)
+        # First, and the only one enabled before a scan: the questions that send
+        # a person here ("这个文件夹能删吗") arrive before they press 开始体检.
+        self.manual_btn = QPushButton("新手手册")
+        self.manual_btn.setToolTip("六页说明：C 盘那几类文件夹、能腾地方的几处、"
+                                   "别自己动的几处、快捷键、值得打开的设置")
+        self.manual_btn.clicked.connect(self.show_manual)
         # Short on the button, full in the tooltip: the four labels used to need
         # 826 px and the window is allowed to go down to 760, where they spilled.
         self.report_btn = QPushButton("生成报告")
@@ -459,14 +478,21 @@ class MainWindow(QMainWindow):
         self.admin_btn.setToolTip("只有两处需要管理员权限：USB 的省电设置、"
                                   "服务到底在不在运行")
         self.admin_btn.clicked.connect(self.relaunch_elevated)
-        for widget in (self.report_btn, self.copy_btn, self.open_btn, self.admin_btn):
+        for widget in (self.manual_btn, self.report_btn, self.copy_btn,
+                       self.open_btn, self.admin_btn):
             actions.addWidget(widget)
         actions.addStretch(1)
         outer.addLayout(actions)
 
         bar = QStatusBar()
         self.setStatusBar(bar)
-        bar.showMessage("本机：%s" % os_label())
+        # The glance rides here because the bar already says 本机 and costs no
+        # line of the board: measured numbers have to sit where a person looks
+        # when nothing is happening, not above the button they just pressed.
+        self.idline = "本机：%s" % os_label()
+        glance = quicklook.glance()
+        bar.showMessage("%s ｜ 顺手量一眼：%s" % (self.idline, glance)
+                        if glance else self.idline)
         if self.is_admin:
             self.admin_btn.setVisible(False)
 
@@ -735,6 +761,16 @@ class MainWindow(QMainWindow):
                self.san_summary))
 
     # ------------------------------------------------------------- actions
+    def show_manual(self):
+        """Open the handbook. One instance, reused: rebuilding six pages of
+        static text every click would only make the window feel slow."""
+        from .manual_view import ManualDialog
+        if getattr(self, "_manual", None) is None:
+            self._manual = ManualDialog(self)
+        self._manual.show()
+        self._manual.raise_()
+        self._manual.activateWindow()
+
     def make_report(self):
         if not self.findings:
             return

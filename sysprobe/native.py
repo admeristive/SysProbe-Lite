@@ -499,6 +499,35 @@ def memory_commit():
     }
 
 
+class _SHQUERYRBINFO(C.Structure):
+    _fields_ = [
+        ("cbSize", W.DWORD),
+        ("i64Size", C.c_longlong),
+        ("i64NumItems", C.c_longlong),
+    ]
+
+
+shell32 = C.WinDLL("shell32.dll", use_last_error=True)
+shell32.SHQueryRecycleBinW.argtypes = [W.LPCWSTR, C.POINTER(_SHQUERYRBINFO)]
+shell32.SHQueryRecycleBinW.restype = C.c_long
+
+
+def recycle_bin(root):
+    """Bytes and item count waiting in one drive's recycle bin.
+
+    Walking C:$Recycle.Bin by hand reads as a permission problem for every
+    folder but the caller's own, so the count would come back low and look
+    like a real answer. This is the shell's own tally - one call, ordinary
+    privilege, and it agrees with what right-clicking the bin shows.
+    """
+    info = _SHQUERYRBINFO()
+    info.cbSize = C.sizeof(_SHQUERYRBINFO)
+    if shell32.SHQueryRecycleBinW(root, C.byref(info)) != 0:
+        return None
+    return {"bytes": max(0, int(info.i64Size)),
+            "items": max(0, int(info.i64NumItems))}
+
+
 _MM_KEY = "SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Memory Management"
 
 

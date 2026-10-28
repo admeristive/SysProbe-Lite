@@ -45,6 +45,7 @@ import html as _html_mod
 from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication, QFrame, QLabel, QPushButton  # noqa: E402
 from sysprobe import paths, probes, scan  # noqa: E402
+from sysprobe import manual as MANUAL  # noqa: E402
 from sysprobe.model import ORDER, Finding, Status  # noqa: E402
 from sysprobe import theme  # noqa: E402
 from sysprobe.ui.main_window import (  # noqa: E402
@@ -90,12 +91,15 @@ def labels(window):
 
 
 def fits_at_minimum(window):
-    """Measured on this machine: the four action buttons used to want 826 px
-    while the window is allowed down to 760. Re-check that every run."""
+    """Measured on this machine, every run: the action row must still fit the
+    760 px the window is allowed to shrink to. It used to be four buttons at
+    826 px of want; the handbook button made five, so the sum is recomputed and
+    the spare is printed instead of remembered."""
     window.resize(window.minimumWidth(), window.minimumHeight())
     QApplication.processEvents()
-    bar = sum(b.sizeHint().width() for b in (window.report_btn, window.copy_btn,
-                                             window.open_btn, window.admin_btn))
+    bar = sum(b.sizeHint().width() for b in (window.manual_btn, window.report_btn,
+                                             window.copy_btn, window.open_btn,
+                                             window.admin_btn))
     spare = window.width() - bar - 20
     horiz = window.scroll.horizontalScrollBar().maximum()
     window.resize(940, 700)
@@ -138,16 +142,37 @@ def main():
 
     print("窗口标题：%s ｜ 大小 %dx%d" % (window.windowTitle(),
                                           window.width(), window.height()))
-    print("按钮：主=%s 报告=%s 复制=%s 打开=%s 提权=%s"
-          % (window.run_btn.text(), window.report_btn.text(),
+    print("按钮：主=%s 手册=%s 报告=%s 复制=%s 打开=%s 提权=%s"
+          % (window.run_btn.text(), window.manual_btn.text(),
+             window.report_btn.text(),
              window.copy_btn.text(), window.open_btn.text(),
              window.admin_btn.text()))
-    print("报告/复制按钮初始可用：", window.report_btn.isEnabled(),
-          window.copy_btn.isEnabled(), "（应为 False False）")
+    print("手册按钮体检前就可点：%s（应为 True） ｜ 报告/复制体检前可点：%s %s（应为 False False）"
+          % (window.manual_btn.isEnabled(), window.report_btn.isEnabled(),
+             window.copy_btn.isEnabled()))
     box_off = window.symptom_box.isHidden()
     print("体检前症状条：%s（应为藏起来，这时没东西可筛） ｜ 按钮 %d 只"
           % ("藏著" if box_off else "露出",
              len(window.symptom_box.findChildren(QPushButton))))
+
+    # The handbook is reachable before a scan, so the gate opens it here. Two
+    # assertions: the tab bar shows every page the table declares (a page that
+    # fails to build disappears quietly and reads as a shorter manual), and its
+    # own rendered text clears the same word list the board is held to.
+    window.show_manual()
+    QApplication.processEvents()
+    dlg = window._manual
+    pages_want = len(MANUAL.pages()) + 1
+    words = labels(dlg)
+    dirty_manual = [(n, t) for n, t in words
+                    if any(w.lower() in t.lower() for w in BANNED_ON_SCREEN)]
+    tabs, rows, asks = MANUAL.counts()
+    print("\n手册：%d 页（表里 %d 页 + 问人 1 页）｜ 取出 %d 条文字 ｜ 底层词汇：%s"
+          % (dlg.pages(), tabs, len(words),
+             "无" if not dirty_manual else dirty_manual[:3]))
+    print("　内容量：%d 页 ｜ %d 条说明 ｜ 问人模板 %d 句 ｜ 状态栏那句：%s"
+          % (tabs, rows, asks, window.statusBar().currentMessage()[:78]))
+    dlg.close()
 
     window.start_scan()
     ok = wait_until(window)
@@ -353,13 +378,28 @@ def main():
     cols_wide = window._cols
     vp = window.scroll.viewport()
     per_screen = sum(1 for c in cards if c.y() + c.height() <= vp.height())
+    # Machine-independent half of the same contract: whatever this machine
+    # happens to report today, no single card may outgrow the viewport. Without
+    # it a long step list on another person's PC reads as a layout bug later.
+    tallest = max((c.height() for c in cards), default=0)
+    # The first screen belongs to the cards, so the row that costs the most is
+    # printed with what is inside it: a status tag and an inline 怎么做 both take
+    # width from the headline, and that is what decides whether a conclusion
+    # stands at 53 px or at 111 px.
+    widest = max(cards, key=lambda c: c.height(), default=None)
+    if widest is not None:
+        bits = {l.objectName(): l.width() for l in widest.findChildren(QLabel)}
+        print("　最占地方那张卡：%s，高 %d px ｜ 角标 %s px ｜ 展开按钮 %s px"
+              % (widest.f.module, widest.height(),
+                 bits.get("Tag", "没挂"),
+                 widest.toggle.width() if widest.toggle is not None else "没挂"))
     print("窗口 %d px -> 列数 %d ｜ 一张卡 %d px，占口宽 %d px 的 %d%% ｜ 板 %d px"
           % (window.minimumWidth(), cols_min, narrow_card, vp_min,
              round(narrow_card * 100.0 / max(1, vp_min)), board_min))
     print("回到 940 px -> 列数 %d ｜ 板 %d px ｜ 一屏完整装下 %d 张 ｜ "
-          "滚动口 %d px ｜ 外框 %d px"
+          "滚动口 %d px ｜ 外框 %d px ｜ 最高一张卡 %d px"
           % (cols_wide, window.board.sizeHint().height(), per_screen,
-             vp.height(), window.height() - vp.height()))
+             vp.height(), window.height() - vp.height(), tallest))
 
     # The complaint chips fold cards away, so the gate checks both halves: what
     # stays must belong to the word pressed, and 都看 must hand every card back.
@@ -429,6 +469,12 @@ def main():
         fails.append("看板是空的")
     if dirty:
         fails.append("界面出现底层词汇")
+    if not window.manual_btn.isEnabled():
+        fails.append("手册按钮体检前点不动")
+    if dlg.pages() != pages_want:
+        fails.append("手册页数和内容表对不上（有一页没建出来）")
+    if dirty_manual:
+        fails.append("手册文字里有底层词汇：%s" % (dirty_manual[:2],))
     if not window.report_written or len(produced) < 2:
         fails.append("报告没写出两个文件")
     if leak:
@@ -512,6 +558,8 @@ def main():
         fails.append("退回单列后卡片仍只占半行，另一半是空的")
     if not 3 <= per_screen:
         fails.append("一屏装不下三张结论，看板又变回翻页")
+    if tallest > vp.height():
+        fails.append("有一张卡比滚动口还高：%d px > %d px" % (tallest, vp.height()))
     print("\n%s（检查项 %d 只，结论 %d 条）"
           % ("通过" if not fails else "失败：" + "、".join(fails),
              len(probes.PROBES), len(window.findings)))

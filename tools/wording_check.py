@@ -10,6 +10,14 @@ library, and scans it against one shared banned-word list.
 What it cannot see is text that only exists at run time - a process name from
 the event log, a startup entry's own label. Those stay covered by gui_smoke.
 
+Two shipped-text decisions are worth naming, because both look like omissions:
+
+* `必须看的使用说明.txt` IS swept (collect_txt below). It sits next to the exe
+  in the release folder and a novice reads it start to finish, so it follows the
+  same list as the screen.
+* `README.md` is NOT. It is the maintainer's file, it never ships, and naming
+  `ctypes` / `winreg` there is the point - those words describe the code.
+
     py -3 tools/wording_check.py
 
 Exit 0 means clean; 1 means a banned word is printed somewhere a person reads.
@@ -19,6 +27,7 @@ import ast
 import io
 import json
 import os
+import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -143,6 +152,34 @@ def collect_json(path):
     return out
 
 
+def collect_txt(path):
+    """One pair per readable line of the how-to file that ships with the exe.
+
+    Every build writes a 64-character fingerprint into this same file
+    (tools/build.py: backfill_hash), and a hex digest can happen to spell a
+    banned run such as "sfc". A hash is not prose, so long hex runs are cut out
+    before the line is scanned - the sentence around it still gets checked.
+    """
+    out = []
+    with io.open(path, "r", encoding="utf-8-sig") as handle:
+        for n, line in enumerate(handle.read().splitlines(), 1):
+            cut = re.sub(r"[0-9a-fA-F]{24,}", "", line)
+            if has_cjk(cut):
+                out.append(("%s:%d" % (os.path.basename(path), n), cut))
+    return out
+
+
+def _planted_doc():
+    """A two-line stand-in for the how-to file, used only by the self-check."""
+    import tempfile
+    handle, path = tempfile.mkstemp(suffix=".txt")
+    with io.open(handle, "w", encoding="utf-8") as stream:
+        stream.write("这一句是正常的话，讲的是怎么看报告。\n")
+        stream.write("这一句含 Defender，后面跟着 64 位指纹 "
+                     + "0" * 64 + "\n")
+    return path
+
+
 def scan(pairs):
     bad = []
     for label, text in pairs:
@@ -165,6 +202,9 @@ def main():
     library = os.path.join(ROOT, "故障规则库.json")
     if os.path.exists(library):
         pairs.extend(collect_json(library))
+    howto = os.path.join(ROOT, "必须看的使用说明.txt")
+    if os.path.exists(howto):
+        pairs.extend(collect_txt(howto))
 
     # A gate nobody proved fires is a rumour. Feed it one bad sentence and insist
     # it catches it.
@@ -172,7 +212,20 @@ def main():
     print("闸口自检：故意塞一条含禁词的文案 -> 命中 %d 处（应为 2）%s"
           % (len(proof), "" if proof else "  <- 闸口失效"))
 
-    print("扫了 %d 个 .py 文件 + 规则库，取出 %d 条会给人读的文字"
+    # The how-to file is a second input shape (line-based, not AST), so it needs
+    # its own proof: one clean line, one line carrying a banned word next to a
+    # 64-char fingerprint. The fingerprint must be cut, the banned word must not.
+    fake = _planted_doc()
+    doc_pairs = collect_txt(fake)
+    os.unlink(fake)
+    doc_bad = scan(doc_pairs)
+    print("说明文件自检：取到 %d 行（应为 2）、命中 %d 处（应为 1，且是那句禁词）"
+          % (len(doc_pairs), len(doc_bad)))
+    if len(proof) != 2 or len(doc_pairs) != 2 or len(doc_bad) != 1:
+        print("\n两处自检对不上数，提取环节或名单变了 - 这一轮的绿不算数")
+        return 1
+
+    print("扫了 %d 个 .py 文件 + 规则库 + 使用说明，取出 %d 条会给人读的文字"
           % (files, len(pairs)))
     if len(pairs) < 150:
         print("取出条数低于 150，提取环节多半坏了（宁可当失败处理）")
